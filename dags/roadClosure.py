@@ -150,6 +150,7 @@ default_args = {
 }
 
 
+@task
 def run_roads_closure():
     db = get_database()
     api = get_api_twitter()
@@ -178,9 +179,4 @@ with DAG(
     start_date=datetime(2022, 1, 1),
     catchup=False,
 ) as dag:
-    task = PythonOperator(
-        task_id='run_roads_closure_task',
-        python_callable=run_roads_closure
-    )
-
-    
+    run_roads_closure()
