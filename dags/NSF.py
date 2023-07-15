@@ -73,7 +73,7 @@ def run_NSF():
     api = get_api_twitter()
     
     textNSF = getScreenNSF("https://www.youtube.com/watch?v=mhJRzQsLZGg")
-    logging.error('textNSF')
+    logging.error(textNSF)
     if textNSF is not None:
         check_NSF(api, db, textNSF)
     else:
