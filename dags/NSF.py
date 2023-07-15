@@ -5,6 +5,9 @@ import re
 from utils.color_detector import BackgroundColorDetector
 from utils.utils import get_database, get_api_twitter, set_last_tweet, get_last_tweet
 from vidgear.gears import CamGear
+from datetime import datetime
+from airflow import DAG
+from airflow.operators.python import PythonOperator
 
 # pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
 
@@ -65,7 +68,6 @@ def check_NSF(api, db_client, text):
         print('No Tweet NSF')
 
 
-
 def run_NSF():
     db = get_database()
     api = get_api_twitter()
@@ -76,4 +78,26 @@ def run_NSF():
     else:
         print('No Tweet NSF')
 
-run_NSF()
+
+default_args = {
+    'owner': 'airflow',
+    'depends_on_past': False,
+    'email': ['adrien.didier@outlook.fr'],
+    'email_on_failure': False,
+    'email_on_retry': False,
+    'retries': 1,
+}
+
+
+with DAG(
+    'run_nsf',
+    default_args=default_args,
+    description='Scrap nsf live stream',
+    schedule_interval='*/2 * * * *',
+    start_date=datetime(2022, 1, 1),
+    catchup=False,
+) as dag:
+    task = PythonOperator(
+        task_id='run_nsf_task',
+        python_callable=run_NSF
+    )

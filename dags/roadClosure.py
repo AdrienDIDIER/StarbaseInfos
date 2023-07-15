@@ -7,10 +7,8 @@ from datetime import datetime
 from utils.utils import get_database, get_api_twitter
 from airflow import DAG
 from airflow.operators.python import PythonOperator
-from airflow.decorators import task
 
 
-@task
 def get_data_table_simple(url):
 
     x = requests.get(url)
@@ -33,7 +31,6 @@ def get_data_table_simple(url):
     return df
 
 
-@task
 def get_data_old_date(client):
     db_infos = client[os.getenv('MONGO_DB_URL_TABLE')].find()
     data = pd.DataFrame(columns=['index', 'Flight'])
@@ -43,7 +40,6 @@ def get_data_old_date(client):
     return data
 
 
-@task
 def insert_new_road_closure(client, df):
     
     df = df[~df['Type'].isna()]
@@ -71,7 +67,6 @@ def insert_new_road_closure(client, df):
     return list_id_new, list_id_change
 
 
-@task
 def get_rc_with_id(client, ids, created):
     rcs = client[os.getenv('MONGO_DB_URL_TABLE')].find({'_id' : {"$in": ids}})
     df = pd.DataFrame(list(rcs))
@@ -80,7 +75,6 @@ def get_rc_with_id(client, ids, created):
     return df
 
 
-@task
 def get_rc_to_check(client):
     rcs = client[os.getenv('MONGO_DB_URL_TABLE')].find({'Flight': -1})
     result = []
@@ -89,7 +83,6 @@ def get_rc_to_check(client):
     return result
 
 
-@task
 def tweet_road_closure_simple(api, df):
 
     message = []
@@ -140,17 +133,6 @@ def tweet_road_closure_simple(api, df):
     return
 
 
-default_args = {
-    'owner': 'airflow',
-    'depends_on_past': False,
-    'email': ['your-email@example.com'],
-    'email_on_failure': False,
-    'email_on_retry': False,
-    'retries': 1,
-}
-
-
-@task
 def run_roads_closure():
     db = get_database()
     api = get_api_twitter()
@@ -171,12 +153,27 @@ def run_roads_closure():
         print("No Tweet RC")
 
 
+default_args = {
+    'owner': 'airflow',
+    'depends_on_past': False,
+    'email': ['adrien.didier@outlook.fr'],
+    'email_on_failure': False,
+    'email_on_retry': False,
+    'retries': 1,
+}
+
+
 with DAG(
     'run_roads_closure',
     default_args=default_args,
     description='Scrap road closure page and tweet about it',
-    schedule_interval='*/5 * * * *',
+    schedule_interval='*/2 * * * *',
     start_date=datetime(2022, 1, 1),
     catchup=False,
 ) as dag:
-    run_roads_closure()
+    task = PythonOperator(
+        task_id='run_roads_closure_task',
+        python_callable=run_roads_closure
+    )
+
+    
