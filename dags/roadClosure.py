@@ -6,6 +6,7 @@ from io import StringIO
 from datetime import datetime
 from utils.utils import get_database, get_api_twitter
 from airflow import DAG
+from airflow.operators.python import PythonOperator
 
 
 def get_data_table_simple(url):
@@ -142,14 +143,7 @@ default_args = {
 }
 
 
-with DAG(
-    'run_roads_closure',
-    default_args=default_args,
-    description='Scrap road closure page and tweet about it',
-    schedule_interval='*/5 * * * *',
-    start_date=datetime(2022, 1, 1),
-    catchup=False,
-) as dag:
+def run_roads_closure():
     db = get_database()
     api = get_api_twitter()
 
@@ -167,3 +161,19 @@ with DAG(
         tweet_road_closure_simple(api, df_to_tweet)
     else:
         print("No Tweet RC")
+
+
+with DAG(
+    'run_roads_closure',
+    default_args=default_args,
+    description='Scrap road closure page and tweet about it',
+    schedule_interval='*/5 * * * *',
+    start_date=datetime(2022, 1, 1),
+    catchup=False,
+) as dag:
+    task = PythonOperator(
+        task_id='run_roads_closure_task',
+        python_callable=run_roads_closure
+    )
+
+    
