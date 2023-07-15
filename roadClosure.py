@@ -5,6 +5,7 @@ import requests
 from io import StringIO 
 from datetime import datetime
 from utils.utils import get_database, get_api_twitter
+from airflow.decorators import dag
 
 
 def get_data_table_simple(url):
@@ -131,6 +132,7 @@ def tweet_road_closure_simple(api, df):
     return
 
 
+@dag(schedule_interval='*/5 * * * *')
 def run_road_closure():
     db = get_database()
     api = get_api_twitter()
@@ -155,4 +157,4 @@ def run_road_closure():
     else:
         print("No Tweet RC")
 
-run_road_closure()
+# run_road_closure()
