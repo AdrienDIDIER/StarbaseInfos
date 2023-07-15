@@ -46,7 +46,7 @@ def img_to_text(crop_frame):
 
 
 def getScreenNSF(url):
-    stream = CamGear(source=url, stream_mode=True, logging=False).start() # YouTube Video URL as input
+    stream = CamGear(source=url, stream_mode=True, logging=True).start() # YouTube Video URL as input
     frame = stream.read()
     crop_frame = frame[995:1080, 245:1820]
     ret = img_to_text(crop_frame)
