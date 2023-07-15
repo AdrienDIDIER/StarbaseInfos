@@ -5,7 +5,7 @@ import requests
 from io import StringIO 
 from datetime import datetime
 from utils.utils import get_database, get_api_twitter
-from airflow.decorators import dag
+from airflow import DAG
 
 
 def get_data_table_simple(url):
@@ -132,19 +132,30 @@ def tweet_road_closure_simple(api, df):
     return
 
 
-@dag(schedule_interval='*/5 * * * *')
-def run_road_closure():
+default_args = {
+    'owner': 'airflow',
+    'depends_on_past': False,
+    'email': ['your-email@example.com'],
+    'email_on_failure': False,
+    'email_on_retry': False,
+    'retries': 1,
+}
+
+
+with DAG(
+    'run_roads_closure',
+    default_args=default_args,
+    description='Scrap road closure page and tweet about it',
+    schedule_interval='*/5 * * * *',
+    start_date=datetime(2022, 1, 1),
+    catchup=False,
+) as dag:
     db = get_database()
     api = get_api_twitter()
 
     # GET ROAD closure
     df = get_data_table_simple("https://www.cameroncountytx.gov/spacex/")
     row_added, row_updated = insert_new_road_closure(db, df)
-    # dates_list = get_rc_to_check(db)
-
-    # GET INFOS ABOUT FLIGHT DURING ROAD closure
-    # df_flight = get_infos_flight("https://www.cameroncountytx.gov/spacex/", dates_list)
-    # flight_update(db, df_flight)
 
     # GET DATA OF NEW AND UPDATED ROAD closure
     df_created = get_rc_with_id(db, row_added, True)
@@ -156,5 +167,3 @@ def run_road_closure():
         tweet_road_closure_simple(api, df_to_tweet)
     else:
         print("No Tweet RC")
-
-# run_road_closure()
