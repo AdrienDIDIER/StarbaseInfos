@@ -1,0 +1,10 @@
+/.env
+/.venv
+/__pycache__
+/.aws-sam
+env.json
+/.poppler-22.04.0
+/.tesseract_ocr
+test.py
+cookies.json
+__pycache__
