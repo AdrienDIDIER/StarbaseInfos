@@ -1,7 +1,7 @@
 import pytesseract
 import webcolors
 import re
-
+import logging
 from utils.color_detector import BackgroundColorDetector
 from utils.utils import get_database, get_api_twitter, set_last_tweet, get_last_tweet
 from vidgear.gears import CamGear
@@ -76,7 +76,7 @@ def run_NSF():
     if textNSF is not None:
         check_NSF(api, db, textNSF)
     else:
-        print('No Tweet NSF')
+        logging.error('No Tweet NSF')
 
 
 default_args = {
@@ -93,7 +93,7 @@ with DAG(
     'run_nsf',
     default_args=default_args,
     description='Scrap nsf live stream',
-    schedule_interval='*/2 * * * *',
+    schedule='*/5 * * * *',
     start_date=datetime(2022, 1, 1),
     catchup=False,
 ) as dag:

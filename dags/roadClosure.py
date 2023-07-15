@@ -1,7 +1,7 @@
 import os
 import pandas as pd
 import requests
-
+import logging
 from io import StringIO 
 from datetime import datetime
 from utils.utils import get_database, get_api_twitter
@@ -146,11 +146,11 @@ def run_roads_closure():
     df_updated = get_rc_with_id(db, row_updated, False)
     df_to_tweet = pd.concat([df_created, df_updated])
     if len(df_to_tweet) > 0:
-        print(f"Update / Creation of {len(df_created) + len(df_updated)} RC.")
+        logging.error(f"Update / Creation of {len(df_created) + len(df_updated)} RC.")
         # tweet_road_closure_without_api(driver, df_to_tweet)
         tweet_road_closure_simple(api, df_to_tweet)
     else:
-        print("No Tweet RC")
+        logging.error("No Tweet RC")
 
 
 default_args = {
@@ -167,7 +167,7 @@ with DAG(
     'run_roads_closure',
     default_args=default_args,
     description='Scrap road closure page and tweet about it',
-    schedule_interval='*/2 * * * *',
+    schedule='*/2 * * * *',
     start_date=datetime(2022, 1, 1),
     catchup=False,
 ) as dag:
