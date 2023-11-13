@@ -6,7 +6,7 @@ import re
 import pytesseract
 import logging
 from bs4 import BeautifulSoup
-from utils.utils import get_database, get_api_twitter
+from utils.utils import get_database, get_api_twitter, upload_media
 from airflow import DAG
 from airflow.operators.python import PythonOperator
 from datetime import datetime
@@ -71,8 +71,8 @@ def check_MSIB(api, db_client, text, pdf_file):
             buf.seek(0)
             # Read the bytes from the buffer
             image_bytes = buf.read()
-            media = api.media_upload(image_bytes)
-            api.create_tweet(text = to_tweet, media_ids=[media.media_id])
+            media = upload_media(image_bytes)
+            api.create_tweet(text = to_tweet, media_ids=[media])
         except Exception as e:
             print(e)
         set_last_msib(db_client, check_date, "MONGO_DB_URL_TABLE_MSIB")

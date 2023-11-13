@@ -36,3 +36,15 @@ def get_last_tweet(client, id, table):
     if res is not None:
         return True
     return False
+
+
+def upload_media(img_data):
+    tweepy_auth = tweepy.OAuth1UserHandler(
+        "{}".format(os.environ.get("TWITTER_API_KEY")),
+        "{}".format(os.environ.get("TWITTER_API_SECRET_KEY")),
+        "{}".format(os.environ.get("TWITTER_ACCESS_TOKEN")),
+        "{}".format(os.environ.get("TWITTER_ACCESS_TOKEN_SECRET")),
+    )
+    tweepy_api = tweepy.API(tweepy_auth)
+    media = tweepy_api.media_upload(img_data)
+    return media.media_id
