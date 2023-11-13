@@ -46,5 +46,8 @@ def upload_media(img_data):
         "{}".format(os.environ.get("TWITTER_ACCESS_TOKEN_SECRET")),
     )
     tweepy_api = tweepy.API(tweepy_auth)
-    media = tweepy_api.media_upload(img_data)
+    with open("test.jpg", "wb") as handler:
+        handler.write(img_data)
+    media = tweepy_api.media_upload("test.jpg")
+    os.remove("test.jpg")
     return media.media_id
