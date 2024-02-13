@@ -15,7 +15,7 @@ from datetime import datetime
 def getMSIB():
 
     url = "http://msib.bocachica.com/"
-    response = requests.get(url)
+    response = requests.get(url, verify=False)
     if response.status_code != 200:
         logging.error("Error fetching page home")
     else:
