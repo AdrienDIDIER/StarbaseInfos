@@ -30,7 +30,7 @@ def getMSIB():
 
 
 def download_file(download_url):
-    response = requests.get(download_url)
+    response = requests.get(download_url, verify=False)
     return response.content
 
 
