@@ -15,16 +15,19 @@ from datetime import datetime
 def getMSIB():
 
     url = "http://msib.bocachica.com/"
-    response = requests.get(url, verify=False)
+    response = requests.get(url)
     if response.status_code != 200:
         logging.error("Error fetching page home")
     else:
         content = response.content
 
-    soup_page = BeautifulSoup(content, 'html.parser')
-    url_msib = soup_page.find("frame")['src']
+    # print(response.content)
+    # print(response.content.decode(errors='replace'))
+    # soup_page = BeautifulSoup(content, 'html.parser')
+    # print(soup_page.prettify())
+    # url_msib = soup_page.find("frame")['src']
 
-    pdf_file = download_file(url_msib)
+    pdf_file = download_file("http://msib.bocachica.com/")
     text = pdf_to_img_to_text(pdf_file)
     return text, pdf_file 
 
@@ -35,7 +38,7 @@ def download_file(download_url):
 
 
 def pdf_to_img_to_text(file):
-    stream = pdf2image.convert_from_bytes(file)[0]
+    stream = pdf2image.convert_from_bytes(file, poppler_path="C:\\Users\\adrie\\Documents\\poppler-24.02.0")[0]
     # Recognize the text as string in image using pytesserct
     text = str(((pytesseract.image_to_string(stream))))
     text = text.replace("-\n", "").lower()
@@ -101,15 +104,18 @@ default_args = {
 }
 
 
-with DAG(
-    'run_msib',
-    default_args=default_args,
-    description='Scrap MSIB info',
-    schedule='*/5 * * * *',
-    start_date=datetime(2022, 1, 1),
-    catchup=False,
-) as dag:
-    task = PythonOperator(
-        task_id='run_msib_task',
-        python_callable=run_MSIB
-    )
+# with DAG(
+#     'run_msib',
+#     default_args=default_args,
+#     description='Scrap MSIB info',
+#     schedule='*/5 * * * *',
+#     start_date=datetime(2022, 1, 1),
+#     catchup=False,
+# ) as dag:
+#     task = PythonOperator(
+#         task_id='run_msib_task',
+#         python_callable=run_MSIB
+#     )
+
+
+run_MSIB()
