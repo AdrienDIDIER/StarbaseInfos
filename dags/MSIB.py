@@ -38,7 +38,7 @@ def download_file(download_url):
 
 
 def pdf_to_img_to_text(file):
-    stream = pdf2image.convert_from_bytes(file, poppler_path="C:\\Users\\adrie\\Documents\\poppler-24.02.0")[0]
+    stream = pdf2image.convert_from_bytes(file)[0]
     # Recognize the text as string in image using pytesserct
     text = str(((pytesseract.image_to_string(stream))))
     text = text.replace("-\n", "").lower()
