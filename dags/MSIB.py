@@ -104,18 +104,18 @@ default_args = {
 }
 
 
-# with DAG(
-#     'run_msib',
-#     default_args=default_args,
-#     description='Scrap MSIB info',
-#     schedule='*/5 * * * *',
-#     start_date=datetime(2022, 1, 1),
-#     catchup=False,
-# ) as dag:
-#     task = PythonOperator(
-#         task_id='run_msib_task',
-#         python_callable=run_MSIB
-#     )
+with DAG(
+    'run_msib',
+    default_args=default_args,
+    description='Scrap MSIB info',
+    schedule='*/5 * * * *',
+    start_date=datetime(2022, 1, 1),
+    catchup=False,
+) as dag:
+    task = PythonOperator(
+        task_id='run_msib_task',
+        python_callable=run_MSIB
+    )
 
 
 run_MSIB()
