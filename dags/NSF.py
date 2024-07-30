@@ -81,6 +81,8 @@ def run_NSF():
         logging.error('No Tweet NSF')
 
 
+# run_NSF()
+
 default_args = {
     'owner': 'airflow',
     'depends_on_past': False,
