@@ -7,6 +7,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     tesseract-ocr poppler-utils ffmpeg libgl1 tzdata \
  && rm -rf /var/lib/apt/lists/*
 
+
 # Code applicatif
 WORKDIR /opt/app
 COPY requirements.txt /opt/app/requirements.txt
