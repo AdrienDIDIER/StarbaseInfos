@@ -51,7 +51,7 @@ def img_to_text(crop_frame):
 def getScreenNSF(url):
     options = {
         "STREAM_PARAMS": {
-            "cookiefile": os.getenv("YT_COOKIES"),
+            "cookies": os.getenv("YT_COOKIES"),
             "extractor_args": {"youtube": {"player_client": ["android","web"]}},
             "http_headers": {"User-Agent": "Mozilla/5.0", "Accept-Language": "fr-FR,fr;q=0.9"},
             }
