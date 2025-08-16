@@ -1,16 +1,18 @@
 import pytesseract
 import webcolors
 import re
+import os
 import logging
 from utils.color_detector import BackgroundColorDetector
 from utils.utils import get_database, get_api_twitter, set_last_tweet, get_last_tweet
 from vidgear.gears import CamGear
-from datetime import datetime
-from airflow import DAG
-from airflow.operators.python import PythonOperator
+from dotenv import load_dotenv
+
+load_dotenv()
 
 logging.basicConfig(level=logging.INFO)
 pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
+
 
 
 def closest_colour(requested_colour):
@@ -47,7 +49,9 @@ def img_to_text(crop_frame):
 
 
 def getScreenNSF(url):
-    stream = CamGear(source=url, stream_mode=True, logging=True).start() # YouTube Video URL as input
+    options = {"STREAM_PARAMS": {"cookiefile": os.getenv("YT_COOKIES")}}
+
+    stream = CamGear(source=url, stream_mode=True, logging=True, **options).start() # YouTube Video URL as input
     frame = stream.read()
     crop_frame = frame[995:1080, 245:1820]
     ret = img_to_text(crop_frame)
@@ -56,6 +60,7 @@ def getScreenNSF(url):
     else:
         ret = ret.replace("$", "S")
         return "Infos @NASASpaceflight : \n" + ret
+
 
 def check_NSF(api, db_client, text):
     if not get_last_tweet(db_client, re.sub(r'[^\w\s]', '', text).lower(), "MONGO_DB_URL_TABLE_PT"):
@@ -75,6 +80,7 @@ def run_NSF():
     
     textNSF = getScreenNSF("https://www.youtube.com/watch?v=mhJRzQsLZGg")
     logging.info(textNSF)
+    exit()
     if textNSF is not None:
         check_NSF(api, db, textNSF)
     else:
