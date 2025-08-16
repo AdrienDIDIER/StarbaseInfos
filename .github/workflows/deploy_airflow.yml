@@ -63,12 +63,12 @@ jobs:
       # 6) Mettre à jour l'image dans le compose et redémarrer
       - name: Pull & Restart on VPS
         env:
-          IMAGE: ${{ env.IMAGE }}
+          OWNER: ${{ github.repository_owner }}
+          GHCR_PAT: ${{ secrets.GHCR_PAT }}
         run: |
-          ssh -o StrictHostKeyChecking=no ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} bash -lc '
-            docker login ghcr.io -u ${{ github.repository_owner }} -p ${{ secrets.GHCR_PAT }}
-            # remplace l'ancienne référence par la nouvelle (toute chaîne finissant par "-airflow:prod")
-            sed -i "s|ghcr.io/.\\+-airflow:prod|'"$IMAGE"'|g" /opt/airflow/docker-compose.yml
-            docker compose -f /opt/airflow/docker-compose.yml pull
-            docker compose -f /opt/airflow/docker-compose.yml up -d
-          '
+          ssh -o StrictHostKeyChecking=no ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} /bin/bash << EOF
+          set -euo pipefail
+          docker login ghcr.io -u "$OWNER" -p "$GHCR_PAT"
+          docker compose -f /opt/airflow/docker-compose.yml pull
+          docker compose -f /opt/airflow/docker-compose.yml up -d
+          EOF
