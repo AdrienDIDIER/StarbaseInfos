@@ -55,4 +55,3 @@ jobs:
             docker compose -f /opt/airflow/docker-compose.yml pull
             docker compose -f /opt/airflow/docker-compose.yml up -d
           '
-p
