@@ -13,7 +13,16 @@ jobs:
       IMAGE: ghcr.io/${{ github.repository_owner }}/${{ github.event.repository.name }}-airflow:prod
     steps:
       - uses: actions/checkout@v4
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+        with:
+          install: true
+          driver-opts: image=moby/buildkit:latest
 
+      - name: Show Buildx info (debug)
+        run: |
+          docker buildx version
+          docker buildx ls
       - name: Login to GHCR
         uses: docker/login-action@v3
         with:
@@ -46,3 +55,4 @@ jobs:
             docker compose -f /opt/airflow/docker-compose.yml pull
             docker compose -f /opt/airflow/docker-compose.yml up -d
           '
+p
