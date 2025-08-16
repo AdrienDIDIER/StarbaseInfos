@@ -1,7 +1,7 @@
 name: Build & Deploy Airflow
 on:
   push:
-    branches: [ "main" ]       # ta branche de déploiement
+    branches: [ "main" ]  # ajuste si besoin
 
 jobs:
   build-and-deploy:
@@ -9,20 +9,25 @@ jobs:
     permissions:
       contents: read
       packages: write
-    env:
-      IMAGE: ghcr.io/${{ github.repository_owner }}/${{ github.event.repository.name }}-airflow:prod
+
     steps:
       - uses: actions/checkout@v4
+
+      # 1) Buildx pour activer le cache GHA
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
         with:
           install: true
           driver-opts: image=moby/buildkit:latest
 
-      - name: Show Buildx info (debug)
+      # 2) Construire le nom d'image en MINUSCULES
+      - name: Set IMAGE env (lowercase)
         run: |
-          docker buildx version
-          docker buildx ls
+          REPO_LC=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
+          echo "IMAGE=ghcr.io/${REPO_LC}-airflow:prod" >> $GITHUB_ENV
+          echo "Using image: $IMAGE"
+
+      # 3) Login GHCR pour push
       - name: Login to GHCR
         uses: docker/login-action@v3
         with:
@@ -30,6 +35,7 @@ jobs:
           username: ${{ github.repository_owner }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # 4) Build & Push (avec cache GHA)
       - name: Build & Push image
         uses: docker/build-push-action@v6
         with:
@@ -39,6 +45,7 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+      # 5) SSH vers le VPS
       - name: Setup SSH
         run: |
           mkdir -p ~/.ssh
@@ -46,12 +53,15 @@ jobs:
           chmod 600 ~/.ssh/id_rsa
           ssh-keyscan -H "${{ secrets.VPS_HOST }}" >> ~/.ssh/known_hosts
 
+      # 6) Mettre à jour l'image dans le compose et redémarrer
       - name: Pull & Restart on VPS
+        env:
+          IMAGE: ${{ env.IMAGE }}
         run: |
           ssh -o StrictHostKeyChecking=no ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} bash -lc '
-            export IMAGE=${{ env.IMAGE }}
             docker login ghcr.io -u ${{ github.repository_owner }} -p ${{ secrets.GHCR_PAT }}
-            sed -i "s|ghcr.io/.\\+airflow:prod|$IMAGE|g" /opt/airflow/docker-compose.yml
+            # remplace l'ancienne référence par la nouvelle (toute chaîne finissant par "-airflow:prod")
+            sed -i "s|ghcr.io/.\\+-airflow:prod|'"$IMAGE"'|g" /opt/airflow/docker-compose.yml
             docker compose -f /opt/airflow/docker-compose.yml pull
             docker compose -f /opt/airflow/docker-compose.yml up -d
           '
