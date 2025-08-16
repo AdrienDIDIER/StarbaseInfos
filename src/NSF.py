@@ -87,7 +87,6 @@ def run_NSF():
     
     textNSF = getScreenNSF("https://www.youtube.com/watch?v=mhJRzQsLZGg")
     logging.info(textNSF)
-    exit()
     if textNSF is not None:
         check_NSF(api, db, textNSF)
     else:
