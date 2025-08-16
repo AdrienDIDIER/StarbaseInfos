@@ -36,3 +36,4 @@ yarg==0.1.9
 yt-dlp
 pdf2image
 beautifulsoup4
+certifi

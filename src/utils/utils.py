@@ -1,6 +1,8 @@
+import certifi
 import tweepy
 import os
 import dotenv
+import certifi
 
 from pymongo import MongoClient
 
@@ -11,7 +13,12 @@ def get_database():
     # Provide the mongodb atlas url to connect python to mongodb using pymongo
     CONNECTION_STRING = os.getenv('MONGO_DB_URL')
     # Create a connection using MongoClient. You can import MongoClient or use pymongo.MongoClient
-    client = MongoClient(CONNECTION_STRING)
+    client = MongoClient(
+        CONNECTION_STRING,
+        tls=True,
+        tlsCAFile=certifi.where(),
+        serverSelectionTimeoutMS=30000,
+        )
     return client['bocachicaroadclosure']
 
 
