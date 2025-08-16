@@ -46,6 +46,13 @@ jobs:
           cache-to: type=gha,mode=max
 
       # 5) SSH vers le VPS
+      - name: Validate required secrets
+        run: |
+          test -n "${{ secrets.VPS_HOST }}" || (echo "❌ VPS_HOST is empty" && exit 1)
+          test -n "${{ secrets.VPS_USER }}" || (echo "❌ VPS_USER is empty" && exit 1)
+          test -n "${{ secrets.VPS_SSH_KEY }}" || (echo "❌ VPS_SSH_KEY is empty" && exit 1)
+          test -n "${{ secrets.GHCR_PAT }}" || (echo "❌ GHCR_PAT is empty" && exit 1)
+
       - name: Setup SSH
         run: |
           mkdir -p ~/.ssh
