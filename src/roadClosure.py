@@ -152,28 +152,4 @@ def run_roads_closure():
     else:
         logging.error("No Tweet RC")
 
-
-default_args = {
-    'owner': 'airflow',
-    'depends_on_past': False,
-    'email': ['adrien.didier@outlook.fr'],
-    'email_on_failure': False,
-    'email_on_retry': False,
-    'retries': 1,
-}
-
-
-with DAG(
-    'run_roads_closure',
-    default_args=default_args,
-    description='Scrap road closure page and tweet about it',
-    schedule='*/2 * * * *',
-    start_date=datetime(2022, 1, 1),
-    catchup=False,
-) as dag:
-    task = PythonOperator(
-        task_id='run_roads_closure_task',
-        python_callable=run_roads_closure
-    )
-
-    
+run_roads_closure()

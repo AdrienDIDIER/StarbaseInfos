@@ -10,7 +10,7 @@ from airflow import DAG
 from airflow.operators.python import PythonOperator
 
 logging.basicConfig(level=logging.INFO)
-# pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
+pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
 
 
 def closest_colour(requested_colour):
@@ -74,34 +74,10 @@ def run_NSF():
     api = get_api_twitter()
     
     textNSF = getScreenNSF("https://www.youtube.com/watch?v=mhJRzQsLZGg")
-    logging.error(textNSF)
+    logging.info(textNSF)
     if textNSF is not None:
         check_NSF(api, db, textNSF)
     else:
         logging.error('No Tweet NSF')
 
-
-# run_NSF()
-
-default_args = {
-    'owner': 'airflow',
-    'depends_on_past': False,
-    'email': ['adrien.didier@outlook.fr'],
-    'email_on_failure': False,
-    'email_on_retry': False,
-    'retries': 1,
-}
-
-
-with DAG(
-    'run_nsf',
-    default_args=default_args,
-    description='Scrap nsf live stream',
-    schedule='*/5 * * * *',
-    start_date=datetime(2022, 1, 1),
-    catchup=False,
-) as dag:
-    task = PythonOperator(
-        task_id='run_nsf_task',
-        python_callable=run_NSF
-    )
+run_NSF()
