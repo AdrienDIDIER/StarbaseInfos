@@ -91,5 +91,10 @@ def run_NSF():
         check_NSF(api, db, textNSF)
     else:
         logging.error('No Tweet NSF')
+    return
 
-run_NSF()
+if __name__ == "__main__":
+    try:
+        run_NSF()
+    except Exception as e:
+        logging.error(f"Error occurred: {e}")

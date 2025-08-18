@@ -13,5 +13,5 @@ with DAG(
 ) as dag:
     BashOperator(
         task_id="run_roadclosure",
-        bash_command="python /opt/app/src/roadClosure.py"
+        bash_command="python /opt/app/src/Scraper_RC.py"
     )
