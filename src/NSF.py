@@ -49,12 +49,25 @@ def img_to_text(crop_frame):
 
 
 def getScreenNSF(url):
+    ytdlp_params = {
+        # ✅ évite le client TV/IOS qui déclenche "not available on this app"
+        "extractor_args": {"youtube": {"player_client": ["android"]}},
+        # cookies netscape si besoin (connexion/âge/région)
+        "cookiefile": os.getenv("YT_COOKIES"),
+        # headers "normaux"
+        "http_headers": {"User-Agent": "Mozilla/5.0", "Accept-Language": "fr-FR,fr;q=0.9"},
+        # ✅ pas de cache yt-dlp (équiv. à --rm-cache-dir au lancement)
+        "cachedir": False,
+        # autres options utiles
+        "noplaylist": True,
+    }
+
     options = {
-        "STREAM_PARAMS": {
-            "cookiefile": os.getenv("YT_COOKIES"),
-            "http_headers": {"User-Agent": "Mozilla/5.0", "Accept-Language": "fr-FR,fr;q=0.9"},
-            }
-        }
+        "STREAM_PARAMS": ytdlp_params,
+        # petit délai pour laisser le backend accrocher le flux
+        "time_delay": 2,
+        "logging": True,
+    }
 
     logging.info(options)
     stream = CamGear(source=url, stream_mode=True, logging=True, **options).start() # YouTube Video URL as input
