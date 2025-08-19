@@ -21,12 +21,18 @@ def get_last_licence(client, id, table):
 def check_TFR(api, db_client, proxy):
     print(f"Ajout licence licenceBoca BDD")
 
-    url = f"https://drs.faa.gov/browse/excelExternalWindow/DRSDOCID173891218620231102140506.0001?modalOpened=true"
+    url = f"https://drs.faa.gov/browse/excelExternalWindow/DRSDOCID173891218620231102140506.0001"
     data = requests.get(url).content
     soup = BeautifulSoup(data, 'html.parser')
     
-    print(data)
     print(soup.prettify())
+    # Get div with class doc-content
+    doc_content = soup.find("div", class_="doc-content")
+    if doc_content:
+        print(doc_content.get_text(strip=True))
+    else:
+        print("No document content found.")
+
     exit()
 
 
