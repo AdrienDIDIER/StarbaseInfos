@@ -29,11 +29,11 @@ tqdm==4.65.0
 tweepy==4.14.0
 tzdata==2023.3
 urllib3==2.0.3
-vidgear
+vidgear==0.3.3
 webcolors==1.13
 websockets==11.0.3
 yarg==0.1.9
-yt-dlp
+yt-dlp==2025.8.11
 pdf2image
 beautifulsoup4
 certifi
