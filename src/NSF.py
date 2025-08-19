@@ -65,8 +65,7 @@ def getScreenNSF(url):
     options = {
         "STREAM_PARAMS": ytdlp_params,
         # petit délai pour laisser le backend accrocher le flux
-        "time_delay": 2,
-        "logging": True,
+        "time_delay": 2
     }
 
     logging.info(options)
