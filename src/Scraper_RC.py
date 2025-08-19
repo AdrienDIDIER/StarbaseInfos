@@ -194,8 +194,6 @@ def _build_tweet_text(status: str, description: str, date_str: str, uniq_key: st
         "{EMOJI} Heads up: {STATUS}\n{DESC}\nWhen: {DATE}",
         # 3
         "{EMOJI} {STATUS}\n{DESC}\n{DATE} — plan accordingly.",
-        # 4
-        "{EMOJI} Update: {STATUS}\nWhen: {DATE}\n{DESC}",
         # 5
         "{EMOJI} {STATUS} | {DATE}\n{DESC}\nExpect restrictions in the area.",
     ]
