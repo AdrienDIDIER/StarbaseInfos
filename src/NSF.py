@@ -53,7 +53,7 @@ def getScreenNSF(url):
         # ✅ évite le client TV/IOS qui déclenche "not available on this app"
         "extractor_args": {"youtube": {"player_client": ["android"]}},
         # cookies netscape si besoin (connexion/âge/région)
-        "cookiefile": os.getenv("YT_COOKIES"),
+        # "cookiefile": os.getenv("YT_COOKIES"),
         # headers "normaux"
         "http_headers": {"User-Agent": "Mozilla/5.0", "Accept-Language": "fr-FR,fr;q=0.9"},
         # ✅ pas de cache yt-dlp (équiv. à --rm-cache-dir au lancement)
