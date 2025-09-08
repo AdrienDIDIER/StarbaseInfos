@@ -7,7 +7,7 @@ from utils.color_detector import BackgroundColorDetector
 from utils.utils import get_database, get_api_twitter, set_last_tweet, get_last_tweet
 from vidgear.gears import CamGear
 from dotenv import load_dotenv
-from utils.proxy_utils import StickyFreeProxyPool
+# from utils.proxy_utils import StickyFreeProxyPool
 
 # VERIFY_URL = "https://www.youtube.com/watch?v=mhJRzQsLZGg"
 # pool = StickyFreeProxyPool(verify_url=VERIFY_URL, country_ids=["FR","DE"], ttl_sec=600)
@@ -18,7 +18,7 @@ from utils.proxy_utils import StickyFreeProxyPool
 load_dotenv()
 
 logging.basicConfig(level=logging.INFO)
-pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
+# pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
 
 
 
@@ -60,7 +60,7 @@ def getScreenNSF(url):
         # ✅ évite le client TV/IOS qui déclenche "not available on this app"
         # "extractor_args": {"youtube": {"player_client": ["mweb"]}},
         # cookies netscape si besoin (connexion/âge/région)
-        "cookiefile": os.getenv("YT_COOKIES"),
+        # "cookiefile": os.getenv("YT_COOKIES"),
         # headers "normaux"
         "http_headers": {"User-Agent": "Mozilla/5.0", "Accept-Language": "fr-FR,fr;q=0.9"},
         # ✅ pas de cache yt-dlp (équiv. à --rm-cache-dir au lancement)
@@ -106,7 +106,6 @@ def run_NSF():
     
     textNSF = getScreenNSF("https://www.youtube.com/watch?v=mhJRzQsLZGg")
     logging.info(textNSF)
-    exit()
     if textNSF is not None:
         check_NSF(api, db, textNSF)
     else:
