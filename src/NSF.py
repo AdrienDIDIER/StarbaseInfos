@@ -60,7 +60,7 @@ def getScreenNSF(url):
         "cachedir": False,
         # autres options utiles
         "noplaylist": True,
-        "proxy": "http://brd-customer-hl_75b80be6-zone-residential_proxy1:9ahopuiblk36@brd.superproxy.io:33335", 
+        # "proxy": "http://brd-customer-hl_75b80be6-zone-residential_proxy1:9ahopuiblk36@brd.superproxy.io:33335", 
     }
 
     options = {
