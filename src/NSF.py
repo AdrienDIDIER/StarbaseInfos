@@ -7,13 +7,6 @@ from utils.color_detector import BackgroundColorDetector
 from utils.utils import get_database, get_api_twitter, set_last_tweet, get_last_tweet
 from vidgear.gears import CamGear
 from dotenv import load_dotenv
-# from utils.proxy_utils import StickyFreeProxyPool
-
-# VERIFY_URL = "https://www.youtube.com/watch?v=mhJRzQsLZGg"
-# pool = StickyFreeProxyPool(verify_url=VERIFY_URL, country_ids=["FR","DE"], ttl_sec=600)
-
-# proxies = pool.get_proxies()
-# proxy_url = proxies["http"]
 
 load_dotenv()
 
@@ -67,7 +60,7 @@ def getScreenNSF(url):
         "cachedir": False,
         # autres options utiles
         "noplaylist": True,
-        # "proxy": proxy_url, 
+        "proxy": "http://brd-customer-hl_75b80be6-zone-residential_proxy1:9ahopuiblk36@brd.superproxy.io:33335", 
     }
 
     options = {
