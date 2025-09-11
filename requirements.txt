@@ -37,3 +37,5 @@ yt-dlp==2025.8.11
 pdf2image
 beautifulsoup4
 certifi
+fastapi
+uvicorn
