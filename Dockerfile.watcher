@@ -1,4 +1,3 @@
-# watcher_service/Dockerfile.watcher
 FROM python:3.11-slim
 
 ENV DEBIAN_FRONTEND=noninteractive TZ=Europe/Paris
@@ -7,12 +6,16 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
  && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
-COPY ./requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+ENV PYTHONUNBUFFERED=1 PYTHONPATH=/app
 
-COPY . /app
-ENV PYTHONUNBUFFERED=1 DATA_DIR=/data
-VOLUME ["/data"]
+# deps Python
+COPY watcher_service/requirements-watcher.txt .
+RUN pip install --no-cache-dir -r requirements-watcher.txt
+
+# copie le code nécessaire (et seulement lui)
+COPY watcher_service/ /app/watcher_service/
+COPY utils/ /app/utils/
 
 EXPOSE 8000
-CMD ["python", "watcher_service/main.py"]
+# plus robuste: exécuter le module (PYTHONPATH=/app)
+CMD ["python", "-m", "watcher_service.main"]
