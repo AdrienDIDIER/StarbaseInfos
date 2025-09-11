@@ -1,6 +1,8 @@
 # watcher_service/main.py
 import os, time, re, json, threading, signal, logging
 import pytesseract, webcolors
+import os, cv2, logging
+from yt_dlp import YoutubeDL
 from fastapi import FastAPI
 from fastapi.responses import PlainTextResponse, JSONResponse
 import uvicorn
@@ -74,17 +76,42 @@ def img_to_text(crop_frame):
         return text.replace("-\n", "")
     return None
 
-def open_stream():
-    ytdlp_params = {
-        "http_headers": {"User-Agent": "Mozilla/5.0", "Accept-Language": "fr-FR,fr;q=0.9"},
-        "cachedir": True,
+def _resolve_hls(url: str) -> str | None:
+    ydl_opts = {
+        "quiet": True,
         "noplaylist": True,
-        "cookiefile": os.getenv("YT_COOKIES"),
+        # "extractor_args": {"youtube": {"player_client": ["mweb"]}},  # évite les clients qui bloquent
+        # "cookiefile": os.getenv("YT_COOKIES"),  # décommente si cookies
     }
-    options = {"STREAM_PARAMS": ytdlp_params, "time_delay": 2, "logging": True}
-    logger.info(options)
-    logger.info(YOUTUBE_URL)
-    return CamGear(source=YOUTUBE_URL, stream_mode=True, **options).start()
+    with YoutubeDL(ydl_opts) as y:
+        info = y.extract_info(url, download=False)
+        for f in info.get("formats", []):
+            if "m3u8" in (f.get("protocol") or ""):
+                return f["url"]
+    return None
+
+def open_stream():
+    url = YOUTUBE_URL.strip()
+    hls = _resolve_hls(url)
+    if not hls:
+        raise RuntimeError("No HLS format found from yt_dlp")
+
+    os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = (
+        "reconnect;1|reconnect_streamed;1|reconnect_delay_max;15"
+    )
+    cap = cv2.VideoCapture(hls, cv2.CAP_FFMPEG)
+
+    class _CapWrap:
+        def __init__(self, c): self.c = c
+        def read(self):
+            ok, f = self.c.read()
+            return f if ok else None
+        def stop(self):
+            try: self.c.release()
+            except Exception: pass
+
+    logging.info("Opened HLS via OpenCV/FFmpeg")
+    return _CapWrap(cap)
 
 STOP = False
 def handle_signal(sig, frame):
