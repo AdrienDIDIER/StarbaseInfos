@@ -14,7 +14,7 @@ RUN pip install --no-cache-dir -r requirements-watcher.txt
 
 # copie le code nécessaire (et seulement lui)
 COPY watcher_service/ /app/watcher_service/
-COPY utils/ /app/utils/
+COPY  watcher_service/utils/ /app/utils/
 
 EXPOSE 8000
 # plus robuste: exécuter le module (PYTHONPATH=/app)
