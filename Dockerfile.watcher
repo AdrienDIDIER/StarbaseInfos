@@ -8,14 +8,18 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /app
 ENV PYTHONUNBUFFERED=1 PYTHONPATH=/app
 
-# deps Python
-COPY watcher_service/requirements-watcher.txt .
-RUN pip install --no-cache-dir -r requirements-watcher.txt
+# 1) deps Python (ton fichier existe ici)
+COPY watcher_servive/requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
 
-# copie le code nécessaire (et seulement lui)
-COPY watcher_service/ /app/watcher_service/
-COPY  watcher_service/utils/ /app/utils/
+# 2) code du watcher (dossier avec un "v")
+COPY watcher_servive/ /app/watcher_servive/
+
+# 3) tes utilitaires importés par "from utils ..."
+#    (ils sont dans src/utils dans ton repo)
+COPY src/utils/ /app/utils/
 
 EXPOSE 8000
-# plus robuste: exécuter le module (PYTHONPATH=/app)
-CMD ["python", "-m", "watcher_service.main"]
+
+# Lance le module en tenant compte du nom "watcher_servive"
+CMD ["python", "-m", "watcher_servive.main"]
