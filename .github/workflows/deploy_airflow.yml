@@ -82,13 +82,9 @@ jobs:
         run: |
           ssh -o StrictHostKeyChecking=no ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} /bin/bash << 'EOF'
           set -euo pipefail
-          sudo mkdir -p /opt/airflow/shared
-          # login ghcr
-          echo "$GHCR_PAT" | docker login ghcr.io -u "$OWNER" -p "$GHCR_PAT"
-          # pull & redeploy
+          # login GHCR (le secret sera masqué dans les logs)
+          echo "${{ secrets.GHCR_PAT }}" | docker login ghcr.io -u "${{ github.repository_owner }}" --password-stdin
           docker compose -f /opt/airflow/docker-compose.yml pull
           docker compose -f /opt/airflow/docker-compose.yml up -d --remove-orphans
-          # health check rapide (facultatif)
-          sleep 5
           docker ps --format 'table {{.Names}}\t{{.Status}}\t{{.Image}}'
           EOF
