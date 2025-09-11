@@ -82,6 +82,8 @@ def open_stream():
         "cookiefile": os.getenv("YT_COOKIES"),
     }
     options = {"STREAM_PARAMS": ytdlp_params, "time_delay": 2, "logging": True}
+    logging.info(options)
+    logging.info(YOUTUBE_URL)
     return CamGear(source=YOUTUBE_URL, stream_mode=True, **options).start()
 
 STOP = False
