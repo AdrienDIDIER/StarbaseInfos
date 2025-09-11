@@ -33,7 +33,7 @@ vidgear==0.3.3
 webcolors==1.13
 websockets==11.0.3
 yarg==0.1.9
-yt-dlp==2025.8.11
+yt-dlp==2025.9.5
 pdf2image
 beautifulsoup4
 certifi

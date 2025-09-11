@@ -18,7 +18,7 @@ YOUTUBE_URL = os.getenv("YOUTUBE_URL", "https://www.youtube.com/watch?v=mhJRzQsL
 DATA_DIR     = os.getenv("DATA_DIR", "/data")
 LOG_PATH     = os.path.join(DATA_DIR, "nsf-watcher.log")
 STATUS_PATH  = os.path.join(DATA_DIR, "status.json")
-OCR_INTERVAL = float(os.getenv("OCR_INTERVAL_SEC", "5"))
+OCR_INTERVAL = float(os.getenv("OCR_INTERVAL_SEC", "360"))
 
 # --- logging (stdout + fichier rotatif) ---
 logger = logging.getLogger("nsf-watcher")
@@ -82,8 +82,8 @@ def open_stream():
         "cookiefile": os.getenv("YT_COOKIES"),
     }
     options = {"STREAM_PARAMS": ytdlp_params, "time_delay": 2, "logging": True}
-    logging.info(options)
-    logging.info(YOUTUBE_URL)
+    logger.info(options)
+    logger.info(YOUTUBE_URL)
     return CamGear(source=YOUTUBE_URL, stream_mode=True, **options).start()
 
 STOP = False
