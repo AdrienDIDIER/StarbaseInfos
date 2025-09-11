@@ -1,7 +1,8 @@
-name: Build & Deploy Airflow
+name: Build & Deploy Airflow + Watcher
+
 on:
   push:
-    branches: [ "main" ]  # ajuste si besoin
+    branches: ["main"]
 
 jobs:
   build-and-deploy:
@@ -13,21 +14,20 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # 1) Buildx pour activer le cache GHA
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
         with:
           install: true
           driver-opts: image=moby/buildkit:latest
 
-      # 2) Construire le nom d'image en MINUSCULES
-      - name: Set IMAGE env (lowercase)
+      - name: Set image names (lowercase)
         run: |
           REPO_LC=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
-          echo "IMAGE=ghcr.io/${REPO_LC}-airflow:prod" >> $GITHUB_ENV
-          echo "Using image: $IMAGE"
+          echo "AIRFLOW_IMAGE=ghcr.io/${REPO_LC}-airflow" >> $GITHUB_ENV
+          echo "WATCHER_IMAGE=ghcr.io/${REPO_LC}-watcher" >> $GITHUB_ENV
+          echo "SHA_TAG=${GITHUB_SHA::7}" >> $GITHUB_ENV
+          echo "Using images: $AIRFLOW_IMAGE and $WATCHER_IMAGE"
 
-      # 3) Login GHCR pour push
       - name: Login to GHCR
         uses: docker/login-action@v3
         with:
@@ -35,17 +35,32 @@ jobs:
           username: ${{ github.repository_owner }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # 4) Build & Push (avec cache GHA)
-      - name: Build & Push image
+      # Build & push Airflow
+      - name: Build & Push Airflow image
         uses: docker/build-push-action@v6
         with:
           context: .
+          file: Dockerfile
           push: true
-          tags: ${{ env.IMAGE }}
+          tags: |
+            ${{ env.AIRFLOW_IMAGE }}:prod
+            ${{ env.AIRFLOW_IMAGE }}:${{ env.SHA_TAG }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      # 5) SSH vers le VPS
+      # Build & push Watcher
+      - name: Build & Push Watcher image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile.watcher
+          push: true
+          tags: |
+            ${{ env.WATCHER_IMAGE }}:prod
+            ${{ env.WATCHER_IMAGE }}:${{ env.SHA_TAG }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
       - name: Validate required secrets
         run: |
           test -n "${{ secrets.VPS_HOST }}" || (echo "❌ VPS_HOST is empty" && exit 1)
@@ -60,15 +75,20 @@ jobs:
           chmod 600 ~/.ssh/id_rsa
           ssh-keyscan -H "${{ secrets.VPS_HOST }}" >> ~/.ssh/known_hosts
 
-      # 6) Mettre à jour l'image dans le compose et redémarrer
       - name: Pull & Restart on VPS
         env:
           OWNER: ${{ github.repository_owner }}
           GHCR_PAT: ${{ secrets.GHCR_PAT }}
         run: |
-          ssh -o StrictHostKeyChecking=no ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} /bin/bash << EOF
+          ssh -o StrictHostKeyChecking=no ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} /bin/bash << 'EOF'
           set -euo pipefail
-          docker login ghcr.io -u "$OWNER" -p "$GHCR_PAT"
+          sudo mkdir -p /opt/airflow/shared
+          # login ghcr
+          echo "$GHCR_PAT" | docker login ghcr.io -u "$OWNER" --password-stdin
+          # pull & redeploy
           docker compose -f /opt/airflow/docker-compose.yml pull
-          docker compose -f /opt/airflow/docker-compose.yml up -d
+          docker compose -f /opt/airflow/docker-compose.yml up -d --remove-orphans
+          # health check rapide (facultatif)
+          sleep 5
+          docker ps --format 'table {{.Names}}\t{{.Status}}\t{{.Image}}'
           EOF
