@@ -84,7 +84,7 @@ jobs:
           set -euo pipefail
           sudo mkdir -p /opt/airflow/shared
           # login ghcr
-          echo "$GHCR_PAT" | docker login ghcr.io -u "$OWNER" --password-stdin
+          echo "$GHCR_PAT" | docker login ghcr.io -u "$OWNER" -p "$GHCR_PAT"
           # pull & redeploy
           docker compose -f /opt/airflow/docker-compose.yml pull
           docker compose -f /opt/airflow/docker-compose.yml up -d --remove-orphans
