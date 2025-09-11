@@ -9,7 +9,7 @@ WORKDIR /app
 ENV PYTHONUNBUFFERED=1 PYTHONPATH=/app
 
 # 1) deps Python (ton fichier existe ici)
-COPY watcher_servive/requirements.txt .
+COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # 2) code du watcher (dossier avec un "v")
