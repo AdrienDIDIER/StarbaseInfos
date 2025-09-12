@@ -20,7 +20,7 @@ YOUTUBE_URL = os.getenv("YOUTUBE_URL", "https://www.youtube.com/watch?v=mhJRzQsL
 DATA_DIR     = os.getenv("DATA_DIR", "/data")
 LOG_PATH     = os.path.join(DATA_DIR, "nsf-watcher.log")
 STATUS_PATH  = os.path.join(DATA_DIR, "status.json")
-OCR_INTERVAL = float(os.getenv("OCR_INTERVAL_SEC", "360"))
+OCR_INTERVAL = float(os.getenv("OCR_INTERVAL_SEC", "5"))
 
 # --- logging (stdout + fichier rotatif) ---
 logger = logging.getLogger("nsf-watcher")
@@ -76,24 +76,50 @@ def img_to_text(crop_frame):
         return text.replace("-\n", "")
     return None
 
-def _resolve_hls(url: str) -> str | None:
+def _resolve_hls(url: str) -> tuple[str, dict] | tuple[None, None]:
+    """
+    Retourne (url_variant_hls, meta_format) en choisissant la meilleure rendition HLS.
+    On trie par height puis tbr, et on respecte TARGET_HEIGHT si défini.
+    """
+    target_h = int(os.getenv("TARGET_HEIGHT", "1080") or "1080")
+
     ydl_opts = {
         "http_headers": {"User-Agent": "Mozilla/5.0", "Accept-Language": "fr-FR,fr;q=0.9"},
-        "quiet": True,
         "noplaylist": True,
-        "extractor_args": {"youtube": {"player_client": ["mweb"]}},  # évite les clients qui bloquent
-        "cookiefile": os.getenv("YT_COOKIES"),  # décommente si cookies
+        "cachedir": False,
+        "extractor_args": {"youtube": {"player_client": ["mweb"]}},
+        # cookies si besoin :
+        "cookiefile": os.getenv("YT_COOKIES") or None,
+        "quiet": True,
     }
     with YoutubeDL(ydl_opts) as y:
         info = y.extract_info(url, download=False)
-        for f in info.get("formats", []):
-            if "m3u8" in (f.get("protocol") or ""):
-                return f["url"]
-    return None
+
+    # candidates HLS avec hauteur connue
+    fmts = [
+        f for f in info.get("formats", [])
+        if "m3u8" in (f.get("protocol") or "") and (f.get("height") or 0) > 0
+    ]
+    if not fmts:
+        # fallback: tous m3u8, même sans height
+        fmts = [f for f in info.get("formats", []) if "m3u8" in (f.get("protocol") or "")]
+    if not fmts:
+        return None, None
+
+    # 1) ceux <= target_h, sinon 2) tous
+    fmts_le = [f for f in fmts if (f.get("height") or 0) <= target_h]
+    choose_from = fmts_le or fmts
+
+    # trie par (height, tbr) décroissant
+    def _key(f):
+        return (f.get("height") or 0, f.get("tbr") or 0.0)
+    best = sorted(choose_from, key=_key, reverse=True)[0]
+
+    return best.get("url"), best
 
 def open_stream():
     url = YOUTUBE_URL.strip()
-    hls = _resolve_hls(url)
+    hls, meta = _resolve_hls(url)
     if not hls:
         raise RuntimeError("No HLS format found from yt_dlp")
 
