@@ -159,7 +159,8 @@ def run_watcher():
             if stream is None:
                 logger.info("Opening stream…")
                 logger.info("Starting watcher service with cookies=%s", bool(os.getenv("YT_COOKIES")))
-                logger.info(os.getenv("YT_COOKIES"))
+                # Content file cookies if needed
+                logger.info(open(os.getenv("YT_COOKIES") or "No cookies file").read() if os.getenv("YT_COOKIES") else "No cookies file")
                 stream = open_stream()
                 STATE["stream_connected"] = True
                 save_status()
