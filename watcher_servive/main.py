@@ -31,9 +31,6 @@ fmt = logging.Formatter("%(asctime)s %(levelname)s %(message)s")
 sh.setFormatter(fmt); fh.setFormatter(fmt)
 logger.addHandler(sh); logger.addHandler(fh)
 
-logger.info("Starting watcher service with cookies=%s", bool(os.getenv("YT_COOKIES")))
-logger.info(os.getenv("YT_COOKIES"))
-
 STATE = {
     "start_ts": time.time(),
     "last_frame_ts": 0.0,
@@ -161,6 +158,8 @@ def run_watcher():
         try:
             if stream is None:
                 logger.info("Opening stream…")
+                logger.info("Starting watcher service with cookies=%s", bool(os.getenv("YT_COOKIES")))
+                logger.info(os.getenv("YT_COOKIES"))
                 stream = open_stream()
                 STATE["stream_connected"] = True
                 save_status()
