@@ -89,7 +89,7 @@ def _resolve_hls(url: str) -> tuple[str, dict] | tuple[None, None]:
         "cachedir": False,
         "extractor_args": {"youtube": {"player_client": ["mweb"]}},
         # cookies si besoin :
-        "cookiefile": os.getenv("YT_COOKIES") or None,
+        "cookiefile": os.getenv("YT_COOKIES"),
         "quiet": True,
     }
     with YoutubeDL(ydl_opts) as y:
