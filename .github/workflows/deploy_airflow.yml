@@ -49,17 +49,17 @@ jobs:
           cache-to: type=gha,mode=max
 
       # Build & push Watcher
-      - name: Build & Push Watcher image
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: ./Dockerfile.watcher
-          push: true
-          tags: |
-            ${{ env.WATCHER_IMAGE }}:prod
-            ${{ env.WATCHER_IMAGE }}:${{ env.SHA_TAG }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+      # - name: Build & Push Watcher image
+      #   uses: docker/build-push-action@v6
+      #   with:
+      #     context: .
+      #     file: ./Dockerfile.watcher
+      #     push: true
+      #     tags: |
+      #       ${{ env.WATCHER_IMAGE }}:prod
+      #       ${{ env.WATCHER_IMAGE }}:${{ env.SHA_TAG }}
+      #     cache-from: type=gha
+      #     cache-to: type=gha,mode=max
 
       - name: Validate required secrets
         run: |
