@@ -20,7 +20,7 @@ YOUTUBE_URL = os.getenv("YOUTUBE_URL", "https://www.youtube.com/watch?v=mhJRzQsL
 DATA_DIR     = os.getenv("DATA_DIR", "/data")
 LOG_PATH     = os.path.join(DATA_DIR, "nsf-watcher.log")
 STATUS_PATH  = os.path.join(DATA_DIR, "status.json")
-OCR_INTERVAL = float(os.getenv("OCR_INTERVAL_SEC", "5"))
+OCR_INTERVAL = float(os.getenv("OCR_INTERVAL_SEC", "3600"))
 
 # --- logging (stdout + fichier rotatif) ---
 logger = logging.getLogger("nsf-watcher")
