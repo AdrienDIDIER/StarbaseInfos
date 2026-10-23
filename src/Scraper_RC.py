@@ -461,7 +461,7 @@ def _build_tweet_text(
         templates = [
             "{EMOJI} {HEADLINE}\n\n{STATUS}: {DESC}\nWindow: {DATE} (local Starbase time)\n{IMPACT}\n\n{SOURCE}\n{TAGS}",
             "{EMOJI} Boca Chica / Starbase\n\n{STATUS}: {DESC}\nWhen: {DATE} (local Starbase time)\n{IMPACT}\n\nTracking the next update.\n{TAGS}",
-            "{EMOJI}p Starbase access watch\n\n{STATUS}\nArea: {DESC}\nWindow: {DATE} (local time)\n{IMPACT}\n\n{SOURCE}\n{TAGS}",
+            "{EMOJI} Starbase access watch\n\n{STATUS}\nArea: {DESC}\nWindow: {DATE} (local time)\n{IMPACT}\n\n{SOURCE}\n{TAGS}",
             "{EMOJI} {HEADLINE}\n{DESC}\n\n{DATE} (local Starbase time)\n{IMPACT}\n\n{SOURCE}\n{TAGS}",
             "{EMOJI} Road activity near Starbase\n\n{DESC}\nWindow: {DATE} (local Starbase time)\n{IMPACT}\n\n{SOURCE}\n{TAGS}",
             "{EMOJI} SH-4 / Boca Chica access note\n\n{STATUS}: {DESC}\nWindow: {DATE} (local time)\nPlan around possible access changes.\n\n{SOURCE}\n{TAGS}",
@@ -578,8 +578,8 @@ def run_RC_checks() -> None:
             tweeted += 1
             logging.info(f"[RC] Tweeted category={row.get('category', 'road')} uniq_key={row['uniq_key']} tweet_id={tweet_id}")
         except Exception as e:
+            # Pas d'enregistrement en base : la RC sera retentée au prochain passage
             failures += 1
-            _save_new_rc_to_mongo(db, row, tweet_id=None)
             logging.error(f"[RC][ERR] Failed to tweet uniq_key={row['uniq_key']}: {e}")
 
     logging.info(f"[RC] Done. Tweeted: {tweeted}, Failed: {failures}.")
