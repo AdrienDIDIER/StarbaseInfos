@@ -86,9 +86,9 @@ def check_NSF(api, db_client, text):
         print('Tweet NSF')
         try:
             api.create_tweet(text="🇺🇸 " + text)
+            set_last_tweet(db_client, re.sub(r'[^\w\s]', '', text).lower(), "MONGO_DB_URL_TABLE_PT")
         except Exception as e:
             print(e)
-        set_last_tweet(db_client, re.sub(r'[^\w\s]', '', text).lower(), "MONGO_DB_URL_TABLE_PT")
     else:
         print('No Tweet NSF')
 

@@ -76,9 +76,9 @@ def check_MSIB(api, db_client, text, pdf_file):
             image_bytes = buf.read()
             media = upload_media(image_bytes)
             api.create_tweet(text = to_tweet, media_ids=[media])
+            set_last_msib(db_client, check_date, "MONGO_DB_URL_TABLE_MSIB")
         except Exception as e:
             print(e)
-        set_last_msib(db_client, check_date, "MONGO_DB_URL_TABLE_MSIB")
     else:
         print('No Tweet MSIB')
 

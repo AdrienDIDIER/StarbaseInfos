@@ -189,9 +189,9 @@ def run_watcher():
                         try:
                             api.create_tweet(text="🇺🇸 " + text)
                             STATE["tweets_sent"] += 1
+                            set_last_tweet(db, key, "MONGO_DB_URL_TABLE_PT")
                         except Exception as e:
                             logger.warning(f"Twitter error: {e}")
-                        set_last_tweet(db, key, "MONGO_DB_URL_TABLE_PT")
 
                     STATE["last_text"] = text
                     logger.info(f"OCR: {text[:120].replace(os.linesep, ' ')}...")
