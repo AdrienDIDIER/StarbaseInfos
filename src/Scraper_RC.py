@@ -32,6 +32,8 @@ USER_AGENT = (
     "(KHTML, like Gecko) Chrome/127.0 Safari/537.36"
 )
 ACCESS_URL = "https://www.starbase.texas.gov/beach-road-access"
+SNAPSHOT_COLLECTION = "PageSnapshots"
+SNAPSHOT_MAX_CHARS = 500_000
 
 # ---------------------------
 # HTTP
@@ -691,6 +693,20 @@ def apply_actions(db, api, actions: List[Dict[str, Any]], now: datetime) -> Tupl
     return posted, failures
 
 
+def save_page_snapshot(db, html: str, now: datetime) -> None:
+    """Keep the last page that failed the structure check (one Mongo document), to see what the site served."""
+    try:
+        text = " ".join(BeautifulSoup(html, "html.parser").get_text(" ").split())
+        logging.warning(f"[RC] Unexpected page ({len(html)} chars). Starts with: {text[:300]}")
+        db[SNAPSHOT_COLLECTION].update_one(
+            {"key": "rc-structure"},
+            {"$set": {"key": "rc-structure", "url": ACCESS_URL, "saved_at": now, "html": html[:SNAPSHOT_MAX_CHARS]}},
+            upsert=True,
+        )
+    except Exception as e:
+        logging.warning(f"[RC] Could not save the page snapshot: {e}")
+
+
 def run_RC_checks() -> None:
     db = get_database()
     api = get_api_twitter()
@@ -698,13 +714,15 @@ def run_RC_checks() -> None:
 
     try:
         html = get_html(ACCESS_URL)
+    except Exception as e:
+        report_failure(db, "rc-fetch", f"Cannot fetch {ACCESS_URL}: {e}")
+        raise
+    try:
         check_page_structure(html)
     except PageStructureError:
         # Pas d'alerte ici : la page se vide parfois quelques minutes. L'alerte Airflow part
         # si ça dure (voir FAILURES_BEFORE_ALERT dans airflow_dags/alerting.py).
-        raise
-    except Exception as e:
-        report_failure(db, "rc-fetch", f"Cannot fetch {ACCESS_URL}: {e}")
+        save_page_snapshot(db, html, now)
         raise
     report_success(db, "rc-fetch")
 
