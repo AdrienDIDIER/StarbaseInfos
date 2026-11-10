@@ -86,5 +86,7 @@ jobs:
           echo "${{ secrets.GHCR_PAT }}" | docker login ghcr.io -u "${{ github.repository_owner }}" --password-stdin
           docker compose -f /opt/airflow/docker-compose.yml pull
           docker compose -f /opt/airflow/docker-compose.yml up -d --remove-orphans
+          # Chaque déploiement laisse l'ancienne image (2+ Go) : on ne garde que celles en service
+          docker image prune -a -f
           docker ps --format 'table {{.Names}}\t{{.Status}}\t{{.Image}}'
           EOF
