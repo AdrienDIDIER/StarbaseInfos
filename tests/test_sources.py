@@ -12,6 +12,7 @@ from FlightTracker import (  # noqa: E402
     beach_signal,
     build_tracker_post,
     describe_change,
+    is_major_change,
     make_signature,
     marine_signal,
     pick_tracked_launch,
@@ -183,6 +184,15 @@ class FlightTrackerTests(unittest.TestCase):
         self.assertEqual(base, make_signature(_launch(), dict(none)))
         self.assertNotEqual(base, make_signature(_launch(), dict(none, tfr="FDC 6/7001")))
         self.assertNotEqual(base, make_signature(_launch(net=NET + timedelta(days=1)), none))
+
+    def test_only_status_changes_are_minor(self):
+        none = {"beach": None, "tfr": None, "marine": None}
+        state = {"net": NET, "signals": none, "status": "Go"}
+        self.assertTrue(is_major_change(_launch(), none, None))
+        self.assertTrue(is_major_change(_launch(), dict(none, tfr="FDC 6/7001"), state))
+        self.assertTrue(is_major_change(_launch(), none, dict(state, signals=dict(none, beach="Nov 13"))))
+        self.assertTrue(is_major_change(_launch(net=NET + timedelta(days=1)), none, state))
+        self.assertFalse(is_major_change(_launch(status="TBC", status_name="To Be Confirmed"), none, state))
 
     def test_describe_change(self):
         none = {"beach": None, "tfr": None, "marine": None}

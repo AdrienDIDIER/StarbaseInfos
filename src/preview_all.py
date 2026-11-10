@@ -72,10 +72,10 @@ def examples():
 
     yield ("tracker-first-post", *build_tracker_post(LAUNCH, NO_SIGNALS, now=NOW))
     state = {"net": NET, "signals": NO_SIGNALS, "status": "Go"}
-    yield ("tracker-signal-reply", *build_tracker_post(LAUNCH, dict(NO_SIGNALS, beach="Nov 13"), state, now=NOW))
+    yield ("tracker-signal-post", *build_tracker_post(LAUNCH, dict(NO_SIGNALS, beach="Nov 13"), state, now=NOW))
     all_in = {"beach": "Nov 14", "tfr": "FDC 6/7001", "marine": "NAVAREA IV 1187/26"}
     moved = dict(LAUNCH, net=NET + timedelta(days=1))
-    yield ("tracker-date-moved-reply", *build_tracker_post(moved, all_in, dict(state, signals=all_in), now=NOW))
+    yield ("tracker-date-moved-post", *build_tracker_post(moved, all_in, dict(state, signals=all_in), now=NOW))
 
     yield ("digest-quiet-day", *build_digest_post([], [], [], LAUNCH, now=NOW))
     yield ("digest-busy-day", *build_digest_post([BEACH, ROAD], [TFR], [MARINE], LAUNCH, now=NOW))

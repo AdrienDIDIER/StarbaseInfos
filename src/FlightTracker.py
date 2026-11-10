@@ -140,6 +140,24 @@ def describe_change(
     return ""
 
 
+def is_major_change(
+    launch: Dict[str, Any],
+    signals: Dict[str, Optional[str]],
+    state: Optional[Dict[str, Any]],
+) -> bool:
+    """
+    Major = first post, date moved, or a signal appeared / was withdrawn: worth a post of its own.
+    A status change alone is minor and goes as a reply.
+    """
+    if not state:
+        return True
+    previous_net = aware(state.get("net"))
+    if previous_net and previous_net != launch["net"]:
+        return True
+    previous_signals = state.get("signals") or {}
+    return any(bool(signals.get(name)) != bool(previous_signals.get(name)) for name in SIGNAL_LABELS)
+
+
 def build_tracker_post(
     launch: Dict[str, Any],
     signals: Dict[str, Optional[str]],
@@ -165,7 +183,8 @@ def build_tracker_post(
             lines.append((f"⬜ {label}: not posted yet", 0))
             checklist.append((False, f"{label}: not posted yet"))
     lines.append((f"{count}/{len(SIGNAL_LABELS)} official signals in", 2))
-    lines.append(("Updates in this thread.", 4))
+    if not state:
+        lines.append(("Follow for updates.", 4))
     lines.append((TRACKER_HASHTAGS, 3))
 
     card = safe_render_card(
@@ -207,8 +226,11 @@ def run_flight_tracker() -> None:
         return
 
     text, card = build_tracker_post(launch, signals, state, now=now)
-    # Un fil par vol : chaque mise à jour répond au post précédent
-    tweet_id = publish(text, image=card, reply_to=(state or {}).get("last_tweet_id"), api=api)
+    # Les réponses sont peu distribuées sur X : un changement important part en post normal,
+    # seul un simple changement de statut répond au dernier post du vol
+    major = is_major_change(launch, signals, state)
+    reply_to = None if major else (state or {}).get("last_tweet_id")
+    tweet_id = publish(text, image=card, reply_to=reply_to, api=api)
     coll.update_one(
         {"launch_id": launch["id"]},
         {"$set": {
@@ -224,7 +246,7 @@ def run_flight_tracker() -> None:
         }},
         upsert=True,
     )
-    logging.info(f"[TRACKER] Posted {launch['label']} signature={signature} tweet_id={tweet_id}")
+    logging.info(f"[TRACKER] Posted {launch['label']} signature={signature} major={major} tweet_id={tweet_id}")
 
 
 def preview() -> None:
