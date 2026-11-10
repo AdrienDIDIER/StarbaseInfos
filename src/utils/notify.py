@@ -15,6 +15,7 @@ from utils.utils import get_api_twitter
 TWEET_CHAR_LIMIT = 280
 HTTP_TIMEOUT = 20
 ALERT_THROTTLE_HOURS = 6
+ALERT_EMBED_COLOR = 0xF39C12
 
 _TAG_RE = re.compile(r"#\w+")
 
@@ -239,12 +240,21 @@ def send_alert(db, key: str, message: str) -> None:
         logging.warning(f"[ALERT] Throttle check failed, sending anyway: {e}")
 
     text = f"⚠️ StarbaseInfos alert [{key}]\n{message}"
+    # Sur Discord : une carte plutôt qu'un bloc de texte brut
+    embed = {
+        "title": f"⚠️ {key}",
+        "description": message[:3500],
+        "color": ALERT_EMBED_COLOR,
+        "footer": {"text": f"Starbase bot · at most one reminder every {ALERT_THROTTLE_HOURS} h"},
+        "timestamp": now.isoformat(),
+    }
     webhook = os.getenv("ALERT_DISCORD_WEBHOOK_URL")
     alert_chat = os.getenv("TELEGRAM_ALERT_CHAT_ID")
     for send in (
-        (lambda: _post_discord(text, None, webhook_url=webhook)) if webhook else None,
+        (lambda: requests.post(webhook, json={"embeds": [embed]}, timeout=HTTP_TIMEOUT).raise_for_status())
+        if webhook else None,
         (lambda: _post_telegram(text, None, chat_id=alert_chat)) if alert_chat else None,
-        lambda: send_discord_dm(text),
+        lambda: send_discord_dm(text, embed=embed),
     ):
         try:
             if send:
@@ -253,8 +263,11 @@ def send_alert(db, key: str, message: str) -> None:
             logging.warning(f"[ALERT] Failed to deliver alert: {e}")
 
 
-def send_discord_dm(text: str) -> bool:
-    """Private message from the bot DISCORD_BOT_TOKEN to the user DISCORD_ALERT_USER_ID. False when not configured."""
+def send_discord_dm(text: str, embed: Optional[dict] = None) -> bool:
+    """
+    Private message from the bot DISCORD_BOT_TOKEN to the user DISCORD_ALERT_USER_ID. False when not configured.
+    When `embed` is given it is sent instead of the plain text.
+    """
     token, user_id = os.getenv("DISCORD_BOT_TOKEN"), os.getenv("DISCORD_ALERT_USER_ID")
     if not token or not user_id:
         return False
@@ -266,7 +279,7 @@ def send_discord_dm(text: str) -> bool:
     channel.raise_for_status()
     requests.post(
         f"https://discord.com/api/v10/channels/{channel.json()['id']}/messages",
-        headers=headers, json={"content": text[:1900]}, timeout=HTTP_TIMEOUT,
+        headers=headers, json={"embeds": [embed]} if embed else {"content": text[:1900]}, timeout=HTTP_TIMEOUT,
     ).raise_for_status()
     return True
 

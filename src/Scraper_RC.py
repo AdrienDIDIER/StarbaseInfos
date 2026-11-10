@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 from typing import Iterable, Optional, Tuple, List, Dict, Any
 
 from utils.utils import get_database, get_api_twitter
-from utils.notify import publish, send_alert, report_failure, report_success, fit_lines
+from utils.notify import publish, report_failure, report_success, fit_lines
 from utils.cards import safe_render_card
 from utils.timeparse import (
     Window,
@@ -699,8 +699,9 @@ def run_RC_checks() -> None:
     try:
         html = get_html(ACCESS_URL)
         check_page_structure(html)
-    except PageStructureError as e:
-        send_alert(db, "rc-structure", str(e))
+    except PageStructureError:
+        # Pas d'alerte ici : la page se vide parfois quelques minutes. L'alerte Airflow part
+        # si ça dure (voir FAILURES_BEFORE_ALERT dans airflow_dags/alerting.py).
         raise
     except Exception as e:
         report_failure(db, "rc-fetch", f"Cannot fetch {ACCESS_URL}: {e}")
