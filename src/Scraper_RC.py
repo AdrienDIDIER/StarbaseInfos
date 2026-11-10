@@ -54,12 +54,14 @@ def check_page_structure(html: str) -> None:
     """
     Raise if the road/beach blocks are missing. Without this check a redesign would look
     like 'nothing listed' forever, and every active closure would be reported as cancelled.
+    A block is either a list of notices (.cms-big-text) or the site's own "nothing listed"
+    state (.w-dyn-empty: "Boca Chica Beach is open." / "No Road Delay.").
     """
     soup = BeautifulSoup(html, "html.parser")
     missing = [
-        selector
-        for selector in ("#road-closure .cms-big-text", "#beach-closure .cms-big-text")
-        if soup.select_one(selector) is None
+        block
+        for block in ("#road-closure", "#beach-closure")
+        if soup.select_one(f"{block} .cms-big-text, {block} .w-dyn-empty") is None
     ]
     if missing:
         raise PageStructureError(f"Expected blocks not found on {ACCESS_URL}: {', '.join(missing)}")

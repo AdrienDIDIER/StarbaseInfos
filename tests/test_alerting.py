@@ -14,25 +14,20 @@ class FakeTI:
 
     def __init__(self, dag_id, history):
         self.dag_id, self.history = dag_id, list(history)
-        self.state = None
-
-    def get_previous_ti(self):
-        if not self.history:
-            return None
-        previous = FakeTI(self.dag_id, self.history[1:])
-        previous.state = self.history[0]
-        return previous
 
 
 class ThresholdTests(unittest.TestCase):
     def setUp(self):
         self.sent = []
         self._send, self._reason = alerting.send_ops_message, alerting._failure_reason
+        self._states = alerting._previous_states
+        alerting._previous_states = lambda ti, limit: ti.history[:limit]
         alerting.send_ops_message = lambda message, embed=None: self.sent.append(message) or 1
         alerting._failure_reason = lambda context: "boom"
 
     def tearDown(self):
         alerting.send_ops_message, alerting._failure_reason = self._send, self._reason
+        alerting._previous_states = self._states
 
     def _fail(self, dag_id, history):
         alerting.notify_failure({"ti": FakeTI(dag_id, history)})

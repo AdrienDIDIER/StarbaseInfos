@@ -127,6 +127,14 @@ class ExtractionTests(unittest.TestCase):
     def test_changed_layout_is_detected(self):
         with self.assertRaises(PageStructureError):
             check_page_structure("<html><body><h1>Maintenance</h1></body></html>")
+        with self.assertRaises(PageStructureError):
+            check_page_structure('<html><body><div id="road-closure"></div><div id="beach-closure"></div></body></html>')
+
+    def test_webflow_empty_state_is_a_valid_empty_page(self):
+        # État "liste vide" du site : "Boca Chica Beach is open." / "No Road Delay." sans aucun .cms-big-text
+        html = _fixture("access_dyn_empty_2026-11-10.html")
+        check_page_structure(html)
+        self.assertEqual(records_with_keys(extract_access_updates(html)), [])
 
 
 class PlanChangesTests(unittest.TestCase):

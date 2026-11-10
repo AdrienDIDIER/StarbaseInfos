@@ -79,13 +79,37 @@ def send_ops_message(message: str, embed: Optional[dict] = None) -> int:
     return sent
 
 
+def _previous_states(ti, limit: int) -> list:
+    """States of this task in the `limit` runs before this one, most recent first."""
+    from airflow.models import DagRun, TaskInstance
+    from airflow.utils.session import create_session
+
+    with create_session() as session:
+        current = session.query(DagRun.execution_date).filter(
+            DagRun.dag_id == ti.dag_id, DagRun.run_id == ti.run_id
+        ).scalar()
+        rows = (
+            session.query(TaskInstance.state)
+            .join(DagRun, (DagRun.dag_id == TaskInstance.dag_id) & (DagRun.run_id == TaskInstance.run_id))
+            .filter(
+                TaskInstance.dag_id == ti.dag_id,
+                TaskInstance.task_id == ti.task_id,
+                DagRun.execution_date < current,
+            )
+            .order_by(DagRun.execution_date.desc())
+            .limit(limit)
+            .all()
+        )
+    return [str(state) if state is not None else None for (state,) in rows]
+
+
 def _failed_runs_before(ti, limit: int) -> int:
     """How many runs in a row had failed just before this one (counted up to `limit`)."""
     count = 0
-    previous = ti.get_previous_ti()
-    while previous is not None and previous.state == "failed" and count < limit:
+    for state in _previous_states(ti, limit):
+        if state != "failed":
+            break
         count += 1
-        previous = previous.get_previous_ti()
     return count
 
 
