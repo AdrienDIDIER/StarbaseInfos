@@ -2,13 +2,15 @@ from datetime import datetime, timedelta
 from airflow import DAG
 from airflow.operators.bash import BashOperator
 
+from alerting import ALERT_ARGS
+
 with DAG(
     dag_id="tfr",
     description="Track & tweet FAA space-operations TFRs near Starbase",
     schedule="*/5 * * * *",           # toutes les 5 min
     start_date=datetime(2025, 1, 1),
     catchup=False,
-    default_args={"retries": 1, "retry_delay": timedelta(minutes=2)},
+    default_args={"retries": 1, "retry_delay": timedelta(minutes=2), **ALERT_ARGS},
     max_active_runs=1,
 ) as dag:
     BashOperator(

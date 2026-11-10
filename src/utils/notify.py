@@ -241,13 +241,34 @@ def send_alert(db, key: str, message: str) -> None:
     text = f"⚠️ StarbaseInfos alert [{key}]\n{message}"
     webhook = os.getenv("ALERT_DISCORD_WEBHOOK_URL")
     alert_chat = os.getenv("TELEGRAM_ALERT_CHAT_ID")
-    try:
-        if webhook:
-            _post_discord(text, None, webhook_url=webhook)
-        if alert_chat:
-            _post_telegram(text, None, chat_id=alert_chat)
-    except Exception as e:
-        logging.warning(f"[ALERT] Failed to deliver alert: {e}")
+    for send in (
+        (lambda: _post_discord(text, None, webhook_url=webhook)) if webhook else None,
+        (lambda: _post_telegram(text, None, chat_id=alert_chat)) if alert_chat else None,
+        lambda: send_discord_dm(text),
+    ):
+        try:
+            if send:
+                send()
+        except Exception as e:
+            logging.warning(f"[ALERT] Failed to deliver alert: {e}")
+
+
+def send_discord_dm(text: str) -> bool:
+    """Private message from the bot DISCORD_BOT_TOKEN to the user DISCORD_ALERT_USER_ID. False when not configured."""
+    token, user_id = os.getenv("DISCORD_BOT_TOKEN"), os.getenv("DISCORD_ALERT_USER_ID")
+    if not token or not user_id:
+        return False
+    headers = {"Authorization": f"Bot {token}"}
+    channel = requests.post(
+        "https://discord.com/api/v10/users/@me/channels",
+        headers=headers, json={"recipient_id": user_id}, timeout=HTTP_TIMEOUT,
+    )
+    channel.raise_for_status()
+    requests.post(
+        f"https://discord.com/api/v10/channels/{channel.json()['id']}/messages",
+        headers=headers, json={"content": text[:1900]}, timeout=HTTP_TIMEOUT,
+    ).raise_for_status()
+    return True
 
 
 def report_failure(db, key: str, message: str, threshold: int = 3) -> None:
