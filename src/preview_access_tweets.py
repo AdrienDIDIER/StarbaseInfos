@@ -1,67 +1,80 @@
 from __future__ import annotations
 
 import argparse
+import os
 
 from Scraper_RC import (
     ACCESS_URL,
-    _build_tweet_text,
-    _make_uniq_key,
-    _optional_text,
+    build_post_card,
+    build_post_text,
+    check_page_structure,
     extract_access_updates,
     get_html,
+    records_with_keys,
 )
+from utils.notify import tweet_len
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Preview Starbase beach/road access tweets without posting anything."
+        description="Preview Starbase beach/road access posts without posting anything."
     )
     parser.add_argument("--url", default=ACCESS_URL, help="Beach and Road Access page URL.")
+    parser.add_argument("--file", default=None, help="Read a saved HTML page instead of fetching the URL.")
     parser.add_argument(
         "--section",
         choices=["all", "beach", "road"],
         default="all",
         help="Limit the preview to one section.",
     )
-    parser.add_argument("--limit", type=int, default=None, help="Maximum number of tweets to preview.")
+    parser.add_argument(
+        "--event",
+        choices=["new", "updated", "cancelled", "lifted"],
+        default="new",
+        help="Which kind of post to preview ('updated' compares each record with itself).",
+    )
+    parser.add_argument("--limit", type=int, default=None, help="Maximum number of posts to preview.")
+    parser.add_argument("--cards", default=None, help="Directory where the image cards are written.")
     args = parser.parse_args()
 
-    df = extract_access_updates(get_html(args.url), source_url=args.url)
-    if args.section != "all" and not df.empty:
-        df = df[df["category"] == args.section].reset_index(drop=True)
+    if args.file:
+        with open(args.file, encoding="utf-8") as f:
+            html = f.read()
+    else:
+        html = get_html(args.url)
+    check_page_structure(html)
 
-    if df.empty:
+    records = records_with_keys(extract_access_updates(html, source_url=args.url))
+    if args.section != "all":
+        records = [r for r in records if r["category"] == args.section]
+
+    if not records:
         print("No matching beach or road access updates found.")
         return
 
     if args.limit is not None:
-        df = df.head(args.limit)
+        records = records[: args.limit]
 
     print("Preview only: no Twitter API or MongoDB calls are made.\n")
 
-    for index, row in df.iterrows():
-        category = _optional_text(row.get("category")) or "road"
-        backup_date = _optional_text(row.get("backup_date"))
-        uniq_key = _make_uniq_key(
-            row["date"],
-            row["description"],
-            category=category,
-            backup_date=backup_date,
-        )
-        tweet = _build_tweet_text(
-            status=row["status"],
-            description=row["description"],
-            date_str=row["date"],
-            uniq_key=uniq_key,
-            category=category,
-            backup_date=backup_date,
-        )
+    for index, record in enumerate(records, start=1):
+        previous = record if args.event == "updated" else None
+        post = build_post_text(args.event, record, previous=previous)
 
         print("=" * 80)
-        print(f"{index + 1}. {category.upper()} | {len(tweet)} chars | key={uniq_key}")
+        print(f"{index}. {record['category'].upper()} | {tweet_len(post)} chars | key={record['uniq_key']}")
         print("-" * 80)
-        print(tweet)
+        print(post)
         print()
+
+        if args.cards:
+            card = build_post_card(args.event, record, previous=previous)
+            if card:
+                os.makedirs(args.cards, exist_ok=True)
+                path = os.path.join(args.cards, f"access_{index}_{args.event}.png")
+                with open(path, "wb") as f:
+                    f.write(card)
+                print(f"Card written to {path}\n")
 
 
 if __name__ == "__main__":

@@ -5,7 +5,7 @@ FROM apache/airflow:2.9.3-python3.11
 USER root
 ENV DEBIAN_FRONTEND=noninteractive TZ=Europe/Paris
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    tesseract-ocr poppler-utils ffmpeg libgl1 tzdata \
+    tesseract-ocr poppler-utils ffmpeg libgl1 tzdata fonts-dejavu-core \
  && rm -rf /var/lib/apt/lists/*
 
 # Préparer le dossier app et donner les droits à 'airflow'

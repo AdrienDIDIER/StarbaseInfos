@@ -1,11 +1,25 @@
 from __future__ import annotations
 
 import re
+import sys
 import logging
-from typing import Iterable, Optional, Tuple, List, Set, Dict, Any
+from datetime import datetime, timedelta
+from typing import Iterable, Optional, Tuple, List, Dict, Any
 
 from utils.utils import get_database, get_api_twitter
-import hashlib
+from utils.notify import publish, send_alert, report_failure, report_success, fit_lines
+from utils.cards import safe_render_card
+from utils.timeparse import (
+    Window,
+    aware,
+    fmt_duration,
+    fmt_local,
+    fmt_utc,
+    now_utc,
+    parse_window,
+    parse_windows,
+    relative_label,
+)
 import pandas as pd
 from bs4 import BeautifulSoup
 import requests
@@ -28,6 +42,25 @@ def get_html(url: str, timeout: int = 20) -> str:
     resp = requests.get(url, headers=headers, timeout=timeout)
     resp.raise_for_status()
     return resp.text
+
+
+class PageStructureError(RuntimeError):
+    """The access page no longer has the blocks we scrape (site redesign, error page...)."""
+
+
+def check_page_structure(html: str) -> None:
+    """
+    Raise if the road/beach blocks are missing. Without this check a redesign would look
+    like 'nothing listed' forever, and every active closure would be reported as cancelled.
+    """
+    soup = BeautifulSoup(html, "html.parser")
+    missing = [
+        selector
+        for selector in ("#road-closure .cms-big-text", "#beach-closure .cms-big-text")
+        if soup.select_one(selector) is None
+    ]
+    if missing:
+        raise PageStructureError(f"Expected blocks not found on {ACCESS_URL}: {', '.join(missing)}")
 
 
 # ---------------------------
@@ -238,18 +271,16 @@ def _doc_to_uniq_key(doc: Dict[str, Any]) -> Optional[str]:
         )
     return None
 
-def _get_existing_uniq_keys(db, collection_name: str = "RoadClosure") -> Set[str]:
+def _load_stored_docs(db, collection_name: str = "RoadClosure") -> Dict[str, Dict[str, Any]]:
     """
-    Charge les uniq_key existantes depuis Mongo (schema minimal).
+    Charge les docs existants depuis Mongo, indexés par uniq_key.
     """
-    coll = db[collection_name]
-    cursor = coll.find({}, {"_id": 1, "uniq_key": 1, "date": 1, "description": 1, "category": 1, "backup_date": 1})
-    keys: Set[str] = set()
-    for doc in cursor:
+    docs: Dict[str, Dict[str, Any]] = {}
+    for doc in db[collection_name].find({}):
         k = _doc_to_uniq_key(doc)
         if k:
-            keys.add(k)
-    return keys
+            docs[k] = doc
+    return docs
 
 
 def _make_uniq_key(
@@ -269,21 +300,6 @@ def _make_uniq_key(
     return "::".join(parts)
 
 
-# ---------------------------
-# Tweet helpers
-# ---------------------------
-
-RC_TWEET_CHAR_LIMIT = 270
-RC_SOURCE_LABEL = "Source: City of Starbase"
-RC_HASHTAGS = "#Starbase #SpaceX"
-
-
-def _clean_tweet_part(value: Optional[str], fallback: str = "") -> str:
-    text = _URL_RE.sub("", str(value or ""))
-    text = _WS_RE.sub(" ", text).strip(" \t\r\n-|")
-    return text or fallback
-
-
 def _optional_text(value: Any) -> Optional[str]:
     if value is None:
         return None
@@ -296,6 +312,131 @@ def _optional_text(value: Any) -> Optional[str]:
     return text or None
 
 
+def records_with_keys(df: pd.DataFrame) -> List[Dict[str, Any]]:
+    """DataFrame scrapé -> liste de dicts avec leur uniq_key (doublons de page ignorés)."""
+    records: Dict[str, Dict[str, Any]] = {}
+    if df.empty:
+        return []
+    for _, row in df.iterrows():
+        record = {
+            "category": _optional_text(row.get("category")) or "road",
+            "status": row["status"],
+            "description": row["description"],
+            "date": row["date"],
+            "backup_date": _optional_text(row.get("backup_date")),
+            "source_url": row.get("source_url"),
+        }
+        record["uniq_key"] = _make_uniq_key(
+            record["date"],
+            record["description"],
+            category=record["category"],
+            backup_date=record["backup_date"],
+        )
+        records.setdefault(record["uniq_key"], record)
+    return list(records.values())
+
+
+# ---------------------------
+# Change detection (new / updated / cancelled)
+# ---------------------------
+
+# Passages consécutifs sans l'entrée avant de la considérer retirée (évite les pages vides transitoires)
+MISSING_CONFIRM_RUNS = 3
+# Une entrée inactive revue après ce délai est une nouvelle closure (le site ne donne pas l'année)
+STALE_AFTER = timedelta(days=30)
+
+
+def record_windows(record: Dict[str, Any], now: datetime) -> List[Window]:
+    """Primary + backup windows of a record, parsed relative to when it was first seen."""
+    ref = aware(record.get("first_seen")) or now
+    return parse_windows([record.get("date"), record.get("backup_date")], now=ref)
+
+
+def _is_stale(doc: Dict[str, Any], now: datetime) -> bool:
+    if doc.get("active"):
+        return False
+    if doc.get("cancelled_at"):
+        return True
+    last_seen = aware(doc.get("last_seen"))
+    return bool(last_seen and now - last_seen > STALE_AFTER)
+
+
+def plan_changes(
+    current: List[Dict[str, Any]],
+    stored: Dict[str, Dict[str, Any]],
+    now: datetime,
+) -> List[Dict[str, Any]]:
+    """
+    Compare the scraped records with the stored state and return the actions to run:
+      new        record never seen (or seen long ago / cancelled then re-listed)
+      updated    record replacing an active one with the same category + description
+      cancelled  active record gone from the page before its window ended
+      seen       record already known: refresh it, nothing to post
+      missing    active record absent, not yet confirmed as removed
+      expired    active record gone after its window ended: nothing to post
+    Pure function: no I/O, so it can be tested without Mongo.
+    """
+    current_keys = {r["uniq_key"] for r in current}
+    missing_active = [
+        doc for key, doc in stored.items() if doc.get("active") and key not in current_keys
+    ]
+    replaced: List[int] = []
+    actions: List[Dict[str, Any]] = []
+
+    for record in current:
+        doc = stored.get(record["uniq_key"])
+        if doc is not None and not _is_stale(doc, now):
+            actions.append({"type": "seen", "record": record, "previous": doc})
+            continue
+        previous = next(
+            (
+                d for d in missing_active
+                if id(d) not in replaced
+                and _norm(d.get("category") or "road") == _norm(record["category"])
+                and _norm(d.get("description")) == _norm(record["description"])
+            ),
+            None,
+        )
+        if previous is not None:
+            replaced.append(id(previous))
+            actions.append({"type": "updated", "record": record, "previous": previous})
+        else:
+            actions.append({"type": "new", "record": record, "previous": None})
+
+    for doc in missing_active:
+        if id(doc) in replaced:
+            continue
+        missing_count = int(doc.get("missing_count") or 0) + 1
+        if missing_count < MISSING_CONFIRM_RUNS:
+            actions.append({"type": "missing", "record": doc, "missing_count": missing_count})
+            continue
+        windows = record_windows(doc, now)
+        if windows and max(end for _, end in windows) > now:
+            in_progress = any(start <= now < end for start, end in windows)
+            actions.append({"type": "cancelled", "record": doc, "in_progress": in_progress})
+        else:
+            # Fenêtre terminée, ou date illisible : on ne peut pas affirmer une annulation
+            actions.append({"type": "expired", "record": doc})
+    return actions
+
+
+# ---------------------------
+# Post helpers
+# ---------------------------
+
+RC_SOURCE_LABEL = "Source: City of Starbase"
+RC_HASHTAGS = "#Starbase #SpaceX"
+
+_EVENT_TAGS = {"new": "NEW", "updated": "UPDATED", "cancelled": "CANCELLED", "lifted": "LIFTED EARLY"}
+_EVENT_EMOJI = {"updated": "\U0001f504", "cancelled": "❌", "lifted": "✅"}
+
+
+def _clean_tweet_part(value: Optional[str], fallback: str = "") -> str:
+    text = _URL_RE.sub("", str(value or ""))
+    text = _WS_RE.sub(" ", text).strip(" \t\r\n-|")
+    return text or fallback
+
+
 def _status_kind(status: str) -> str:
     s = _norm(status)
     if any(word in s for word in ("closure", "closed", "fermeture", "fermee", "ferme")):
@@ -305,284 +446,276 @@ def _status_kind(status: str) -> str:
     return "update"
 
 
-def _emoji_for_status(status: str) -> str:
-    kind = _status_kind(status)
-    if kind == "closure":
-        return "\U0001f6a7"
-    if kind == "delay":
-        return "\u26a0\ufe0f"
-    return "\U0001f6a6"
+def _headline(record: Dict[str, Any]) -> str:
+    if _norm(record.get("category")) == "beach":
+        return "Boca Chica Beach closure"
+    return f"Starbase road {_status_kind(record.get('status') or '')}"
 
 
-def _headline_for_status(kind: str) -> str:
-    if kind == "closure":
-        return "Starbase road closure"
-    if kind == "delay":
-        return "Starbase road update"
-    return "Starbase access update"
-
-
-def _status_label(status: str) -> str:
-    label = _clean_tweet_part(status, "Road update")
-    if label.lower() in {"road closure", "closure", "closed"}:
-        return "Road closure"
-    if label.lower() in {"road delay", "delay"}:
-        return "Road delay"
-    if label.isupper() or label.islower():
-        return label.title()
-    return label
-
-
-def _format_description(description: str) -> str:
+def _format_description(description: Optional[str]) -> str:
     desc = _clean_tweet_part(description)
     if not desc or desc.lower() == "unknown description":
         return "Boca Chica / SH-4 access"
-    if "boca chica beach closures" in desc.lower():
-        return "Boca Chica Beach access"
-    return re.sub(r"\bproduction\s+to\s+pad\b", "Production Site -> Pad", desc, flags=re.IGNORECASE)
+    return desc
 
 
-def _format_date_window(date_str: str) -> str:
-    date = _clean_tweet_part(date_str, "Schedule to be confirmed")
-    date = re.sub(r"\b([A-Z][a-z]{2})\.\s*", r"\1 ", date)
-    date = re.sub(r"\s+to\s+", " -> ", date, flags=re.IGNORECASE)
-    return date
+def _context_line(record: Dict[str, Any]) -> str:
+    """One line of interpretation; worded as likelihood because the city never states the reason."""
+    if _norm(record.get("category")) == "beach":
+        return "Beach closures usually signal testing or a launch attempt."
+    desc = _norm(record.get("description"))
+    if "massey" in desc:
+        return "Likely vehicle transport to/from the Massey's test site."
+    if "production" in desc and ("pad" in desc or "launch" in desc):
+        return "Likely vehicle transport between the build site and the launch site."
+    return ""
 
 
-def _impact_line(kind: str, description: str, category: str = "road") -> str:
-    if category == "beach":
-        return "Impact: Boca Chica Beach access is scheduled to close."
-    desc = description.lower()
-    if "production" in desc and "pad" in desc:
-        return "Impact: SpaceX traffic may affect SH-4 access."
-    if kind == "closure":
-        return "Impact: Boca Chica / SH-4 access may be restricted."
-    if kind == "delay":
-        return "Impact: expect possible delays around Boca Chica."
-    return "Impact: verify Boca Chica / SH-4 access before heading out."
+def _fmt_window_local(text: Optional[str], ref: datetime) -> str:
+    """Local-time line for a raw window string, raw text when it cannot be parsed."""
+    window = parse_window(text, now=ref)
+    if window:
+        return fmt_local(window)
+    return f"{_clean_tweet_part(text, 'Schedule to be confirmed')} (local time)"
 
 
-def _truncate(text: str, max_len: int) -> str:
-    if max_len <= 0:
-        return ""
-    if len(text) <= max_len:
-        return text
-    if max_len <= 1:
-        return "\u2026"
-    return text[: max_len - 1].rstrip() + "\u2026"
+def _split_backups(backup_date: Optional[str]) -> List[str]:
+    return [b.strip() for b in str(backup_date or "").split("|") if b.strip()]
 
 
-def _stable_index(seed: str, modulo: int) -> int:
-    """
-    Select a deterministic template based on sha1(uniq_key).
-    """
-    h = hashlib.sha1(seed.encode("utf-8")).hexdigest()
-    return int(h[:8], 16) % modulo
+def _pending_window(record: Dict[str, Any], now: datetime) -> Optional[Window]:
+    """First window (primary or backup) that has not ended yet."""
+    pending = sorted(w for w in record_windows(record, now) if w[1] > now)
+    return pending[0] if pending else None
 
 
-def _render_tweet_with_fit(template: str, values: Dict[str, str]) -> str:
-    for desc_len, date_len, backup_len in ((130, 105, 95), (110, 95, 85), (90, 85, 75), (70, 75, 65), (50, 65, 55)):
-        candidate_values = dict(values)
-        candidate_values["DESC"] = _truncate(values["DESC"], desc_len)
-        candidate_values["DATE"] = _truncate(values["DATE"], date_len)
-        candidate_values["BACKUP"] = _truncate(values.get("BACKUP", ""), backup_len)
-        candidate_values["BACKUP_LINE"] = (
-            f"Backup: {candidate_values['BACKUP']}\n"
-            if candidate_values["BACKUP"]
-            else ""
-        )
-        tweet = template.format(**candidate_values).strip()
-        if len(tweet) <= RC_TWEET_CHAR_LIMIT:
-            return tweet
-
-    backup = _truncate(values.get("BACKUP", ""), 70)
-    backup_line = f"Backup: {backup}\n" if backup else ""
-    fallback = (
-        "{EMOJI} {HEADLINE}\n"
-        "Window: {DATE}\n"
-        "{BACKUP_LINE}"
-        "{DESC}\n"
-        "{SOURCE}\n"
-        "{TAGS}"
-    ).format(
-        EMOJI=values["EMOJI"],
-        HEADLINE=values["HEADLINE"],
-        DATE=_truncate(values["DATE"], 90),
-        BACKUP_LINE=backup_line,
-        DESC=_truncate(values["DESC"], 100),
-        SOURCE=values["SOURCE"],
-        TAGS=values["TAGS"],
-    ).strip()
-    return _truncate(fallback, RC_TWEET_CHAR_LIMIT)
+def _fmt_was(record: Dict[str, Any], now: datetime) -> str:
+    """The window a removed record was still announcing."""
+    pending = _pending_window(record, now)
+    if pending:
+        return fmt_local(pending)
+    return _fmt_window_local(record.get("date"), aware(record.get("first_seen")) or now)
 
 
-def _build_tweet_text(
-    status: str,
-    description: str,
-    date_str: str,
-    uniq_key: str,
-    category: str = "road",
-    backup_date: Optional[str] = None,
+def build_post_text(
+    event: str,
+    record: Dict[str, Any],
+    previous: Optional[Dict[str, Any]] = None,
+    now: Optional[datetime] = None,
 ) -> str:
     """
-    Build a concise access update tweet with a clear hook, impact, source, and tags.
-    The selected template stays deterministic so retries do not change the copy.
+    Single recognisable format for every access post:
+    tag + headline, what, when (local then UTC), countdown, context, source, hashtags.
+    Optional lines are dropped (least important first) when the post is too long.
     """
-    category = _norm(category) or "road"
-    kind = "closure" if category == "beach" else _status_kind(status)
-    desc = _format_description(description)
-    date = _format_date_window(date_str)
-    backup = _format_date_window(_optional_text(backup_date)) if _optional_text(backup_date) else ""
+    now = now or now_utc()
+    is_beach = _norm(record.get("category")) == "beach"
+    ref = aware(record.get("first_seen")) or now
+    emoji = _EVENT_EMOJI.get(event) or ("\U0001f3d6️" if is_beach else "\U0001f6a7")
+    lines: List[tuple] = [(f"{emoji} {_EVENT_TAGS[event]} · {_headline(record)}", 0)]
+    if not is_beach:
+        lines.append((_format_description(record.get("description")), 0))
 
-    values = {
-        "EMOJI": _emoji_for_status(status),
-        "HEADLINE": "Boca Chica Beach closure" if category == "beach" else _headline_for_status(kind),
-        "STATUS": _status_label(status),
-        "DESC": desc,
-        "DATE": date,
-        "BACKUP": backup,
-        "BACKUP_LINE": "",
-        "IMPACT": _impact_line(kind, desc, category=category),
-        "SOURCE": RC_SOURCE_LABEL,
-        "TAGS": RC_HASHTAGS,
-    }
+    primary = parse_window(record.get("date"), now=ref)
+    backups = _split_backups(record.get("backup_date"))
 
-    if category == "beach":
-        templates = [
-            "{EMOJI} {HEADLINE}\n\nPrimary: {DATE}\n{BACKUP_LINE}Area: {DESC}\nTimes: local Starbase.\n\n{SOURCE}\n{TAGS}",
-            "{EMOJI} Starbase beach access alert\n\nBeach closure window:\nPrimary: {DATE}\n{BACKUP_LINE}{IMPACT}\nTimes: local Starbase.\n\n{SOURCE}\n{TAGS}",
-            "{EMOJI} Boca Chica Beach closure update\n\n{DESC}\nPrimary: {DATE}\n{BACKUP_LINE}Times: local Starbase.\n\n{SOURCE}\n{TAGS}",
-            "{EMOJI} Boca Chica closure notice\n\nPrimary window: {DATE}\n{BACKUP_LINE}Beach access may be unavailable during this window.\n\n{SOURCE}\n{TAGS}",
-            "{EMOJI} Starbase closure window posted\n\n{DESC}\nPrimary: {DATE}\n{BACKUP_LINE}Worth tracking for launch and static-fire activity.\n\n{SOURCE}\n{TAGS}",
-            "{EMOJI} Access update for Boca Chica Beach\n\nClosure window: {DATE}\n{BACKUP_LINE}Times are local to Starbase.\n\n{SOURCE}\n{TAGS}",
-            "{EMOJI} Beach access heads-up\n\nBoca Chica Beach closure listed for:\n{DATE}\n{BACKUP_LINE}{IMPACT}\n\n{SOURCE}\n{TAGS}",
-        ]
+    if event in ("cancelled", "lifted"):
+        pending = _pending_window(record, now)
+        lines.append((f"Was: {_fmt_was(record, now)}", 0))
+        if event == "lifted" and pending:
+            ahead = fmt_duration(pending[1] - now)
+            lines.append((f"Removed from the city's list {ahead} before the scheduled end.", 1))
+        else:
+            lines.append(("Removed from the city's list before the window started.", 1))
+        if is_beach:
+            lines.append(("Can mean the planned test or launch attempt has moved.", 5))
     else:
-        templates = [
-            "{EMOJI} {HEADLINE}\n\n{STATUS}: {DESC}\nWindow: {DATE} (local Starbase time)\n{IMPACT}\n\n{SOURCE}\n{TAGS}",
-            "{EMOJI} Boca Chica / Starbase\n\n{STATUS}: {DESC}\nWhen: {DATE} (local Starbase time)\n{IMPACT}\n\nTracking the next update.\n{TAGS}",
-            "{EMOJI} Starbase access watch\n\n{STATUS}\nArea: {DESC}\nWindow: {DATE} (local time)\n{IMPACT}\n\n{SOURCE}\n{TAGS}",
-            "{EMOJI} {HEADLINE}\n{DESC}\n\n{DATE} (local Starbase time)\n{IMPACT}\n\n{SOURCE}\n{TAGS}",
-            "{EMOJI} Road activity near Starbase\n\n{DESC}\nWindow: {DATE} (local Starbase time)\n{IMPACT}\n\n{SOURCE}\n{TAGS}",
-            "{EMOJI} SH-4 / Boca Chica access note\n\n{STATUS}: {DESC}\nWindow: {DATE} (local time)\nPlan around possible access changes.\n\n{SOURCE}\n{TAGS}",
-            "{EMOJI} Starbase road watch\n\nNew listed window: {DATE}\nArea: {DESC}\n{IMPACT}\n\n{SOURCE}\n{TAGS}",
-            "{EMOJI} Boca Chica road update\n\n{DESC}\n{DATE} (local Starbase time)\nDrivers and launch-watchers should plan ahead.\n\n{SOURCE}\n{TAGS}",
-            "{EMOJI} Access window update\n\n{STATUS}\n{DESC}\nWindow: {DATE}\n{IMPACT}\n\n{SOURCE}\n{TAGS}",
-        ]
+        label = "Primary: " if is_beach and backups else ""
+        lines.append((f"\U0001f552 {label}{_fmt_window_local(record.get('date'), ref)}", 0))
+        for backup in backups:
+            lines.append((f"\U0001f552 Backup: {_fmt_window_local(backup, ref)}", 1))
+        if primary:
+            lines.append((f"\U0001f310 {fmt_utc(primary)}", 2))
+            if now < primary[1]:
+                lines.append((f"⏳ {relative_label(primary, now).capitalize()}", 4))
+        if event == "updated" and previous is not None:
+            prev_ref = aware(previous.get("first_seen")) or now
+            if _norm(previous.get("date")) != _norm(record.get("date")):
+                lines.append((f"Was: {_fmt_window_local(previous.get('date'), prev_ref)}", 1))
+            else:
+                old_backups = _split_backups(previous.get("backup_date"))
+                was = " | ".join(_fmt_window_local(b, prev_ref) for b in old_backups) or "none"
+                lines.append((f"Backup was: {was}", 1))
+        elif event == "new":
+            lines.append((_context_line(record), 5))
 
-    seed = uniq_key or f"{status}|{description}|{date_str}"
-    tmpl = templates[_stable_index(seed, len(templates))]
-    return _render_tweet_with_fit(tmpl, values)
+    lines.append((RC_SOURCE_LABEL, 1))
+    lines.append((RC_HASHTAGS, 3))
+    return fit_lines(lines)
 
 
-def _extract_tweet_id(resp: Any) -> Optional[str]:
-    """
-    Essaie d'extraire l'ID de tweet depuis divers formats de réponse possibles.
-    """
-    try:
-        # Tweepy v2 style: resp.data["id"]
-        if hasattr(resp, "data") and isinstance(resp.data, dict) and "id" in resp.data:
-            return str(resp.data["id"])
-        # dict direct
-        if isinstance(resp, dict):
-            if "data" in resp and isinstance(resp["data"], dict) and "id" in resp["data"]:
-                return str(resp["data"]["id"])
-            if "id" in resp:
-                return str(resp["id"])
-        # Objet simple avec attribut id
-        if hasattr(resp, "id"):
-            return str(resp.id)
-    except Exception:
-        pass
-    return None
+def build_post_card(
+    event: str,
+    record: Dict[str, Any],
+    previous: Optional[Dict[str, Any]] = None,
+    now: Optional[datetime] = None,
+) -> Optional[bytes]:
+    now = now or now_utc()
+    is_beach = _norm(record.get("category")) == "beach"
+    ref = aware(record.get("first_seen")) or now
+    title = _headline(record) if is_beach else _format_description(record.get("description"))
+    primary = parse_window(record.get("date"), now=ref)
+
+    rows: List[Tuple[str, str]] = []
+    if not is_beach:
+        rows.append(("What", _headline(record)))
+    if event in ("cancelled", "lifted"):
+        rows.append(("Was scheduled", _fmt_was(record, now)))
+        rows.append(("Status", "Removed from the City of Starbase list"))
+    else:
+        rows.append(("Local time", _fmt_window_local(record.get("date"), ref)))
+        if primary:
+            rows.append(("UTC", fmt_utc(primary)))
+        for backup in _split_backups(record.get("backup_date")):
+            rows.append(("Backup", _fmt_window_local(backup, ref)))
+    if event == "updated" and previous is not None:
+        rows.append(("Previously", _fmt_window_local(previous.get("date"), aware(previous.get("first_seen")) or now)))
+
+    accent = "cancelled" if event in ("cancelled", "lifted") else event
+    return safe_render_card(_EVENT_TAGS[event], title, rows=rows[:5], accent=accent, footer=RC_SOURCE_LABEL)
 
 
 # ---------------------------
-# Mongo upsert des nouvelles RC
+# Mongo : état des RC
 # ---------------------------
 
-def _save_new_rc_to_mongo(db, row: pd.Series, tweet_id: Optional[str], collection_name: str = "RoadClosure") -> None:
+def _update_rc(db, uniq_key: str, fields: Dict[str, Any], collection_name: str = "RoadClosure") -> None:
+    db[collection_name].update_one({"uniq_key": uniq_key}, {"$set": {"uniq_key": uniq_key, **fields}}, upsert=True)
+
+
+def _save_new_rc_to_mongo(
+    db,
+    record: Dict[str, Any],
+    tweet_id: Optional[str],
+    now: datetime,
+    collection_name: str = "RoadClosure",
+) -> None:
     """
     Upsert idempotent d'une RC (via uniq_key). On stocke également tweet_id si présent.
     """
-    coll = db[collection_name]
     try:
-        coll.create_index("uniq_key", unique=True)
+        db[collection_name].create_index("uniq_key", unique=True)
     except Exception:
         pass
 
-    doc = {
-        "uniq_key": row["uniq_key"],
-        "category": row.get("category", "road"),
-        "status": row["status"],
-        "description": row["description"],
-        "date": row["date"],               # string telle que scrapée
-        "backup_date": _optional_text(row.get("backup_date")),
-        "source_url": row.get("source_url"),
-        "tweet_id": tweet_id,
-    }
-    coll.update_one({"uniq_key": row["uniq_key"]}, {"$set": doc}, upsert=True)
+    _update_rc(
+        db,
+        record["uniq_key"],
+        {
+            "category": record.get("category", "road"),
+            "status": record["status"],
+            "description": record["description"],
+            "date": record["date"],               # string telle que scrapée
+            "backup_date": _optional_text(record.get("backup_date")),
+            "source_url": record.get("source_url"),
+            "tweet_id": tweet_id,
+            "active": True,
+            "first_seen": now,
+            "last_seen": now,
+            "missing_count": 0,
+            "cancelled_at": None,
+        },
+        collection_name=collection_name,
+    )
+
+
+def get_active_closures(db, now: Optional[datetime] = None) -> List[Dict[str, Any]]:
+    """Active closures whose window has not ended yet (used by the digest and flight tracker)."""
+    now = now or now_utc()
+    active = []
+    for doc in db["RoadClosure"].find({"active": True}):
+        windows = record_windows(doc, now)
+        if not windows or max(end for _, end in windows) > now:
+            active.append(doc)
+    return active
 
 
 # ---------------------------
 # Runner
 # ---------------------------
 
+def apply_actions(db, api, actions: List[Dict[str, Any]], now: datetime) -> Tuple[int, int]:
+    posted = 0
+    failures = 0
+
+    for action in actions:
+        kind, record = action["type"], action["record"]
+        key = record.get("uniq_key") or _doc_to_uniq_key(record)
+        try:
+            if kind == "seen":
+                previous = action["previous"]
+                fields: Dict[str, Any] = {"active": True, "last_seen": now, "missing_count": 0}
+                if not previous.get("first_seen"):
+                    fields["first_seen"] = now
+                _update_rc(db, key, fields)
+            elif kind == "missing":
+                _update_rc(db, key, {"missing_count": action["missing_count"]})
+            elif kind == "expired":
+                _update_rc(db, key, {"active": False, "missing_count": 0})
+            elif kind in ("new", "updated"):
+                previous = action.get("previous")
+                tweet_id = publish(
+                    build_post_text(kind, record, previous=previous, now=now),
+                    image=build_post_card(kind, record, previous=previous, now=now),
+                    api=api,
+                )
+                _save_new_rc_to_mongo(db, record, tweet_id=tweet_id, now=now)
+                if previous is not None:
+                    _update_rc(db, _doc_to_uniq_key(previous), {"active": False, "superseded_by": key})
+                posted += 1
+                logging.info(f"[RC] Posted {kind} category={record.get('category', 'road')} uniq_key={key} tweet_id={tweet_id}")
+            elif kind == "cancelled":
+                event = "lifted" if action.get("in_progress") else "cancelled"
+                tweet_id = publish(
+                    build_post_text(event, record, now=now),
+                    image=build_post_card(event, record, now=now),
+                    api=api,
+                )
+                _update_rc(db, key, {"active": False, "cancelled_at": now, "cancel_tweet_id": tweet_id})
+                posted += 1
+                logging.info(f"[RC] Posted {event} uniq_key={key} tweet_id={tweet_id}")
+        except Exception as e:
+            # Pas d'enregistrement en base : l'action sera retentée au prochain passage
+            failures += 1
+            logging.error(f"[RC][ERR] Failed to apply {kind} uniq_key={key}: {e}")
+    return posted, failures
+
+
 def run_RC_checks() -> None:
     db = get_database()
     api = get_api_twitter()
+    now = now_utc()
 
-    url = ACCESS_URL
-    html = get_html(url)
-    df = extract_access_updates(html, source_url=url)
+    try:
+        html = get_html(ACCESS_URL)
+        check_page_structure(html)
+    except PageStructureError as e:
+        send_alert(db, "rc-structure", str(e))
+        raise
+    except Exception as e:
+        report_failure(db, "rc-fetch", f"Cannot fetch {ACCESS_URL}: {e}")
+        raise
+    report_success(db, "rc-fetch")
 
-    if df.empty:
-        logging.info("[RC] No beach closure or road update detected on the site.")
-        return
+    current = records_with_keys(extract_access_updates(html, source_url=ACCESS_URL))
+    actions = plan_changes(current, _load_stored_docs(db, "RoadClosure"), now)
 
-    df = df.copy()
-    df["uniq_key"] = [
-        _make_uniq_key(
-            row["date"],
-            row["description"],
-            category=row.get("category"),
-            backup_date=_optional_text(row.get("backup_date")),
-        )
-        for _, row in df.iterrows()
-    ]
-
-    existing = _get_existing_uniq_keys(db, "RoadClosure")
-    new_df = df[~df["uniq_key"].isin(existing)].copy().reset_index(drop=True)
-
-    if new_df.empty:
-        logging.info("[RC] Nothing new to save or tweet.")
-        return
-
-    tweeted = 0
-    failures = 0
-
-    for _, row in new_df.iterrows():
-        try:
-            tweet_text = _build_tweet_text(
-                status=row["status"],
-                description=row["description"],
-                date_str=row["date"],
-                uniq_key=row["uniq_key"],
-                category=row.get("category", "road"),
-                backup_date=_optional_text(row.get("backup_date")),
-            )
-            resp = api.create_tweet(text=tweet_text)
-            tweet_id = _extract_tweet_id(resp)
-            _save_new_rc_to_mongo(db, row, tweet_id=tweet_id)
-
-            tweeted += 1
-            logging.info(f"[RC] Tweeted category={row.get('category', 'road')} uniq_key={row['uniq_key']} tweet_id={tweet_id}")
-        except Exception as e:
-            # Pas d'enregistrement en base : la RC sera retentée au prochain passage
-            failures += 1
-            logging.error(f"[RC][ERR] Failed to tweet uniq_key={row['uniq_key']}: {e}")
-
-    logging.info(f"[RC] Done. Tweeted: {tweeted}, Failed: {failures}.")
+    posted, failures = apply_actions(db, api, actions, now)
+    logging.info(f"[RC] Done. Listed: {len(current)}, Posted: {posted}, Failed: {failures}.")
+    if failures:
+        report_failure(db, "rc-post", f"{failures} access post(s) failed, see the task log.")
+    else:
+        report_success(db, "rc-post")
 
 
 if __name__ == "__main__":
@@ -590,3 +723,7 @@ if __name__ == "__main__":
         run_RC_checks()
     except Exception as e:
         logging.error(f"[RC][ERR] Failed to run RC checks: {e}")
+        # Code retour non nul : la tâche Airflow passe en échec au lieu d'un faux succès
+        sys.exit(1)
+
+

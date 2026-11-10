@@ -174,3 +174,4 @@ pyrightconfig.json
 **/.env
 .old
 data/*
+apercu/*

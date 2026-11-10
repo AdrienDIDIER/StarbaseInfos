@@ -19,7 +19,8 @@ def get_database():
         tlsCAFile=certifi.where(),
         serverSelectionTimeoutMS=30000,
         )
-    return client['bocachicaroadclosure']
+    # MONGO_DB_NAME permet de tester sur une base à part sans toucher à l'état de production
+    return client[os.getenv('MONGO_DB_NAME') or 'bocachicaroadclosure']
 
 
 def get_api_twitter():

@@ -1,0 +1,47 @@
+{
+  "_comment": "SYNTHETIC sample written by hand from the usual NGA broadcast-warn format (the API was down when the module was written). Replace with a real saved response when possible.",
+  "broadcast-warn": [
+    {
+      "msgYear": 2026,
+      "msgNumber": 1187,
+      "navArea": "4",
+      "subregion": "26",
+      "text": "WESTERN GULF OF MEXICO.\nTEXAS.\n1. HAZARDOUS OPERATIONS, ROCKET LAUNCHING\n   132245Z TO 140128Z NOV, ALTERNATE\n   142245Z TO 150128Z, 152245Z TO 160128Z NOV\n   IN AREA BOUND BY\n   26-03.00N 097-08.00W, 26-07.00N 096-52.00W,\n   25-55.00N 096-20.00W, 25-52.00N 097-08.00W.\n2. CANCEL THIS MSG 160228Z NOV 26.",
+      "status": "A",
+      "issueDate": "101530Z NOV 2026",
+      "authority": "SPACEX 0/26",
+      "cancelDate": null,
+      "cancelNavArea": null,
+      "cancelMsgYear": null,
+      "cancelMsgNumber": null
+    },
+    {
+      "msgYear": 2026,
+      "msgNumber": 1190,
+      "navArea": "4",
+      "subregion": "11",
+      "text": "WESTERN NORTH ATLANTIC.\nFLORIDA.\n1. HAZARDOUS OPERATIONS, ROCKET LAUNCHING\n   120900Z TO 121330Z NOV IN AREA BOUND BY\n   28-38.00N 080-37.00W, 28-50.00N 080-10.00W,\n   28-30.00N 080-05.00W, 28-27.00N 080-31.00W.\n2. CANCEL THIS MSG 121430Z NOV 26.",
+      "status": "A",
+      "issueDate": "091200Z NOV 2026",
+      "authority": "EASTERN RANGE 0/26",
+      "cancelDate": null,
+      "cancelNavArea": null,
+      "cancelMsgYear": null,
+      "cancelMsgNumber": null
+    },
+    {
+      "msgYear": 2026,
+      "msgNumber": 1175,
+      "navArea": "4",
+      "subregion": "26",
+      "text": "WESTERN GULF OF MEXICO.\nTEXAS.\nDERELICT VESSEL ADRIFT VICINITY 26-10.00N 096-40.00W.",
+      "status": "A",
+      "issueDate": "081000Z NOV 2026",
+      "authority": "USCG 0/26",
+      "cancelDate": null,
+      "cancelNavArea": null,
+      "cancelMsgYear": null,
+      "cancelMsgNumber": null
+    }
+  ]
+}
