@@ -115,6 +115,8 @@ def extract_road_updates(
 ) -> pd.DataFrame:
     """
     Extract road closures/delays in simple columns: category, status, description, date, source_url.
+    Only the road list is read: the scrolling banner of the site has carried test text ("test",
+    "delay") and beach dates in the past, which were posted as road closures.
     """
     soup = BeautifulSoup(html, "html.parser")
     records: List[dict] = []
@@ -143,25 +145,6 @@ def extract_road_updates(
                     "source_url": source_url,
                 }
             )
-
-    if not records:
-        bar = soup.select_one(".notification-bar #rich-bar-message")
-        if bar:
-            text = bar.get_text(" ", strip=True)
-            for part in re.split(r"\s*\|\s*", text):
-                part = part.strip()
-                if not part:
-                    continue
-                records.append(
-                    {
-                        "category": "road",
-                        "status": "Road Delay",
-                        "description": "Road Notification",
-                        "date": part,
-                        "backup_date": None,
-                        "source_url": source_url,
-                    }
-                )
 
     df = pd.DataFrame.from_records(records)
     if not df.empty:
@@ -374,6 +357,14 @@ def _has_ended(doc: Dict[str, Any], now: datetime) -> bool:
     return bool(windows) and max(end for _, end in windows) <= now
 
 
+def _same_kind(doc: Dict[str, Any], record: Dict[str, Any]) -> bool:
+    """Same category, and same road for road delays (beach notices all describe the same beach)."""
+    category = _norm(record.get("category") or "road")
+    if _norm(doc.get("category") or "road") != category:
+        return False
+    return category == "beach" or _norm(doc.get("description")) == _norm(record.get("description"))
+
+
 def plan_changes(
     current: List[Dict[str, Any]],
     stored: Dict[str, Dict[str, Any]],
@@ -382,7 +373,8 @@ def plan_changes(
     """
     Compare the scraped records with the stored state and return the actions to run:
       new        record never seen (or seen long ago / cancelled then re-listed)
-      updated    record replacing an active one with the same category + description
+      updated    record replacing an active one of the same kind (same road, or beach) that just vanished
+      rekeyed    same dates as an active one that just vanished, only written differently: silent
       cancelled  active record gone from the page before its window ended
       seen       record already known: refresh it, nothing to post
       missing    active record absent, not yet confirmed as removed
@@ -396,21 +388,25 @@ def plan_changes(
     replaced: List[int] = []
     actions: List[Dict[str, Any]] = []
 
+    def candidates(record: Dict[str, Any]) -> List[Dict[str, Any]]:
+        return [
+            d for d in missing_active
+            if id(d) not in replaced and _same_kind(d, record) and not _has_ended(d, now)
+        ]
+
     for record in current:
         doc = stored.get(record["uniq_key"])
         if doc is not None and not _is_stale(doc, now):
             actions.append({"type": "seen", "record": record, "previous": doc})
             continue
-        previous = next(
-            (
-                d for d in missing_active
-                if id(d) not in replaced
-                and _norm(d.get("category") or "road") == _norm(record["category"])
-                and _norm(d.get("description")) == _norm(record["description"])
-                and not _has_ended(d, now)
-            ),
-            None,
-        )
+        windows = sorted(parse_windows([record.get("date"), record.get("backup_date")], now=now))
+        # Mêmes dates écrites autrement ("Nov. 13" -> "Nov 13", "closure" -> "closures") : rien à poster
+        same = next((d for d in candidates(record) if windows and sorted(record_windows(d, now)) == windows), None)
+        if same is not None:
+            replaced.append(id(same))
+            actions.append({"type": "rekeyed", "record": record, "previous": same})
+            continue
+        previous = next(iter(candidates(record)), None)
         if previous is not None:
             replaced.append(id(previous))
             actions.append({"type": "updated", "record": record, "previous": previous})
@@ -676,6 +672,12 @@ def apply_actions(db, api, actions: List[Dict[str, Any]], now: datetime) -> Tupl
                 _update_rc(db, key, {"missing_count": action["missing_count"]})
             elif kind == "expired":
                 _update_rc(db, key, {"active": False, "missing_count": 0})
+            elif kind == "rekeyed":
+                previous = action["previous"]
+                _save_new_rc_to_mongo(db, record, tweet_id=previous.get("tweet_id"), now=now)
+                _update_rc(db, key, {"first_seen": aware(previous.get("first_seen")) or now})
+                _update_rc(db, _doc_to_uniq_key(previous), {"active": False, "superseded_by": key})
+                logging.info(f"[RC] Same closure written differently, nothing posted: uniq_key={key}")
             elif kind in ("new", "updated"):
                 previous = action.get("previous")
                 tweet_id = publish(

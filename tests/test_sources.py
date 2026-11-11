@@ -27,7 +27,7 @@ from NavWarnings import (  # noqa: E402
 from TFR import build_tfr_post, is_starbase_space_tfr, parse_tfr_detail  # noqa: E402
 from utils.launches import simplify_launch  # noqa: E402
 from utils.notify import tweet_len  # noqa: E402
-from utils.timeparse import UTC  # noqa: E402
+from utils.timeparse import UTC, fmt_utc  # noqa: E402
 from utils.tracking import plan_tracked  # noqa: E402
 
 FIXTURES = os.path.join(os.path.dirname(__file__), "fixtures")
@@ -61,9 +61,19 @@ class TrackingTests(unittest.TestCase):
         self.assertEqual(_types(plan_tracked({"a": {}}, self._doc("a", NET), NOW)), ["seen"])
 
     def test_reissued_notice_is_an_update(self):
-        actions = plan_tracked({"b": {}}, self._doc("a", NET), NOW)
+        old = self._doc("a", NET, begin=NET - timedelta(hours=6))
+        actions = plan_tracked({"b": {"begin": NET + timedelta(days=1)}}, old, NOW)
         self.assertEqual(_types(actions), ["updated"])
         self.assertEqual(actions[0]["previous"]["uniq_key"], "a")
+
+    def test_unrelated_notices_are_not_an_update(self):
+        old = self._doc("a", NET, begin=NET - timedelta(hours=6))
+        # Dates éloignées, dates inconnues, ou ancien avis déjà terminé : deux événements distincts
+        far = plan_tracked({"b": {"begin": NET + timedelta(days=10)}}, old, NOW)
+        self.assertEqual(_types(far), ["new", "missing"])
+        self.assertEqual(_types(plan_tracked({"b": {}}, old, NOW)), ["new", "missing"])
+        ended = self._doc("a", NOW - timedelta(hours=1), begin=NOW - timedelta(hours=8))
+        self.assertEqual(_types(plan_tracked({"b": {"begin": NOW + timedelta(hours=20)}}, ended, NOW)), ["new", "missing"])
 
     def test_removed_only_after_three_runs_and_before_the_end(self):
         self.assertEqual(_types(plan_tracked({}, self._doc("a", NET), NOW)), ["missing"])
@@ -244,6 +254,25 @@ if __name__ == "__main__":
     unittest.main()
 
 
+class DigestLineTests(unittest.TestCase):
+    def test_every_beach_closure_is_counted(self):
+        from Digest import beach_line
+        closures = [
+            {"category": "beach", "date": "Nov. 14 11:00 AM to Nov. 14 11:30 PM", "first_seen": NOW},
+            {"category": "beach", "date": "Nov. 13 11:00 AM to Nov. 13 11:30 PM", "first_seen": NOW},
+        ]
+        self.assertEqual(beach_line(closures, NOW), "2 closures listed, next Nov 13, 11:00 AM → 11:30 PM CT")
+
+    def test_nearest_tfr_first(self):
+        from Digest import tfr_line
+        tfrs = [
+            {"notam_id": "6/7132", "begin": NET + timedelta(days=2), "end": NET + timedelta(days=2, hours=3)},
+            {"notam_id": "6/7129", "begin": NET, "end": NET + timedelta(hours=2)},
+            {"notam_id": "6/9999"},
+        ]
+        self.assertTrue(tfr_line(tfrs).startswith(f"3 active, next {fmt_utc((NET, NET + timedelta(hours=2)))}"))
+
+
 class WeeklyTests(unittest.TestCase):
     START = NOW - timedelta(days=7)
 
@@ -252,6 +281,7 @@ class WeeklyTests(unittest.TestCase):
         inside, before = NOW - timedelta(days=2), NOW - timedelta(days=9)
         closures = [
             {"category": "beach", "first_seen": inside},
+            {"category": "beach", "first_seen": inside, "superseded_by": "x"},   # reportée : comptée via son successeur
             {"category": "beach", "first_seen": before, "cancelled_at": inside},
             {"category": "road", "first_seen": inside},
             {"first_seen": before},          # hors période

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from utils.notify import publish
@@ -9,6 +9,21 @@ from utils.timeparse import aware
 
 # Passages consécutifs sans l'entrée avant de la considérer retirée de la source
 MISSING_CONFIRM_RUNS = 3
+# Un avis réémis garde à peu près les mêmes dates : au-delà de cet écart, ce sont deux opérations différentes
+REISSUE_MAX_SHIFT = timedelta(days=3)
+
+
+def _is_reissue(previous: Dict[str, Any], item: Dict[str, Any], now: datetime) -> bool:
+    """
+    A vanished notice and a new one are the same operation re-published only when the old one
+    had not ended yet and both have known dates close to each other. Anything else is posted
+    as two separate events rather than risking a wrong 'UPDATED'.
+    """
+    old_begin, old_end = aware(previous.get("begin")), aware(previous.get("end"))
+    new_begin = aware(item.get("begin"))
+    if old_begin is None or old_end is None or new_begin is None or old_end <= now:
+        return False
+    return abs(new_begin - old_begin) <= REISSUE_MAX_SHIFT
 
 
 def plan_tracked(
@@ -20,7 +35,7 @@ def plan_tracked(
     """
     Compare the items a source lists now (by id) with the stored ones:
       new      never seen
-      updated  new item appearing in the run where an active one vanished (reissued notice)
+      updated  new item appearing in the run where an active one with close dates vanished (reissued notice)
       removed  active item gone before its 'end': worth a post
       expired  active item gone after its 'end' (or with no known end): silent
       seen / missing  bookkeeping only
@@ -34,7 +49,7 @@ def plan_tracked(
         if key in stored:
             actions.append({"type": "seen", "key": key, "item": item, "previous": stored[key]})
             continue
-        previous = next((d for d in missing_active if id(d) not in replaced), None)
+        previous = next((d for d in missing_active if id(d) not in replaced and _is_reissue(d, item, now)), None)
         if previous is not None:
             replaced.append(id(previous))
             actions.append({"type": "updated", "key": key, "item": item, "previous": previous})

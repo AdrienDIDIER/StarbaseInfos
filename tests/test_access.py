@@ -200,6 +200,28 @@ class PlanChangesTests(unittest.TestCase):
         new = _beach(date="Oct. 30 6:00 AM to Oct. 30 6:00 PM")
         self.assertEqual(_types(plan_changes([new], _stored(old), NOW)), ["new", "missing"])
 
+    def test_same_dates_written_differently_is_silent(self):
+        old = _beach(date="Oct. 25 6:00 AM to Oct. 25 6:00 PM")
+        for new in (
+            _beach(date="Oct 25 6:00 AM to Oct 25 6:00 PM"),
+            _beach(description="Boca Chica Beach closures", uniq_key="beach::oct. 25 6:00 am to oct. 25 6:00 pm::boca chica beach closures"),
+        ):
+            actions = plan_changes([new], _stored(old), NOW)
+            self.assertEqual(_types(actions), ["rekeyed"])
+            self.assertEqual(actions[0]["previous"]["uniq_key"], old["uniq_key"])
+
+    def test_beach_wording_change_with_new_date_is_an_update(self):
+        old = _beach()
+        new = _beach(date="Oct. 26 6:00 AM to Oct. 26 6:00 PM", description="Boca Chica Beach closures")
+        self.assertEqual(_types(plan_changes([new], _stored(old), NOW)), ["updated"])
+
+    def test_scrolling_banner_is_not_read(self):
+        html = (
+            '<div id="beach-closure"></div><div id="road-closure"></div>'
+            '<div class="notification-bar"><div id="rich-bar-message">test | delay</div></div>'
+        )
+        self.assertEqual(records_with_keys(extract_access_updates(html)), [])
+
     def test_missing_needs_three_runs(self):
         record = _beach()
         for count, expected in ((0, "missing"), (1, "missing"), (2, "cancelled")):

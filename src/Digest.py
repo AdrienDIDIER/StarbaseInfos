@@ -15,6 +15,7 @@ from utils.launches import get_upcoming_starship_launches
 from utils.notify import TWEET_CHAR_LIMIT, fit_lines, publish, tweet_len
 from utils.timeparse import (
     STARBASE_TZ,
+    UTC,
     aware,
     fmt_day,
     fmt_duration,
@@ -48,6 +49,9 @@ def beach_line(closures: List[Dict[str, Any]], now: datetime) -> str:
     if not beach:
         return "no closure listed"
     window = _next_window(beach, now)
+    if len(beach) > 1:
+        count = f"{len(beach)} closures listed"
+        return f"{count}, next {fmt_local(window)}" if window else count
     return f"closure {fmt_local(window)}" if window else "closure listed"
 
 
@@ -63,10 +67,12 @@ def road_line(closures: List[Dict[str, Any]], now: datetime, compact: bool = Fal
 def tfr_line(tfrs: List[Dict[str, Any]]) -> str:
     if not tfrs:
         return "none"
-    begin, end = aware(tfrs[0].get("begin")), aware(tfrs[0].get("end"))
-    if begin and end:
-        return fmt_utc((begin, end))
-    return f"FDC {tfrs[0].get('notam_id')} active"
+    # Le plus proche d'abord (l'ordre Mongo est quelconque) ; dates inconnues en dernier
+    far = datetime.max.replace(tzinfo=UTC)
+    first = min(tfrs, key=lambda t: aware(t.get("begin")) or far)
+    begin, end = aware(first.get("begin")), aware(first.get("end"))
+    text = fmt_utc((begin, end)) if begin and end else f"FDC {first.get('notam_id')} active"
+    return f"{len(tfrs)} active, next {text}" if len(tfrs) > 1 else text
 
 
 def marine_line(warnings: List[Dict[str, Any]], now: datetime) -> str:

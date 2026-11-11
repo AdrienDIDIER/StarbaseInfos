@@ -49,13 +49,14 @@ def week_stats(
     }
     for doc in closures:
         kind = "beach" if str(doc.get("category") or "road").lower() == "beach" else "road"
-        if _in_week(doc.get("first_seen"), start, end):
+        # Une fermeture reportée ou réécrite vit dans son successeur : on ne la compte qu'une fois
+        if _in_week(doc.get("first_seen"), start, end) and not doc.get("superseded_by"):
             stats[f"{kind}_new"] += 1
         if _in_week(doc.get("cancelled_at"), start, end):
             stats[f"{kind}_cancelled"] += 1
     for name, docs in (("tfr", tfrs), ("marine", warnings)):
         for doc in docs:
-            if _in_week(doc.get("first_seen"), start, end):
+            if _in_week(doc.get("first_seen"), start, end) and not doc.get("superseded_by"):
                 stats[f"{name}_new"] += 1
             if _in_week(doc.get("removed_at"), start, end):
                 stats[f"{name}_removed"] += 1
