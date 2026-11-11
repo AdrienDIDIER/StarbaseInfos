@@ -169,13 +169,16 @@ def extract_road_updates(
     return df
 
 
+_BACKUP_LABELS = {"backup", "alternate", "alternate date", "alternate dates"}
+
+
 def extract_beach_access_status(
     html: str,
     source_url: Optional[str] = None,
 ) -> pd.DataFrame:
     """
-    Extract the BEACH Access Status block as one high-signal event per closure notice.
-    Primary and backup windows stay in the same record to avoid posting two near-duplicates.
+    Extract the BEACH Access Status block as one event per closure ("Primary:" line).
+    A backup window stays in the record of its primary to avoid posting two near-duplicates.
     """
     soup = BeautifulSoup(html, "html.parser")
     records: List[dict] = []
@@ -190,32 +193,33 @@ def extract_beach_access_status(
         if not rich:
             continue
 
-        primary: Optional[str] = None
-        backup_dates: List[str] = []
+        # Un bloc peut lister plusieurs fermetures : chaque "Primary:" en ouvre une nouvelle,
+        # un "Backup:" se rattache à la fermeture qui le précède
+        closures: List[Tuple[str, List[str]]] = []
+        orphan_backups: List[str] = []
         for label, value in _iter_label_value_pairs(_rich_text_lines(rich)):
             label_norm = _norm(label)
-            if label_norm == "primary":
-                primary = value
-            elif label_norm in {"backup", "alternate", "alternate date", "alternate dates"}:
-                backup_dates.append(value)
-            elif "date" in label_norm and primary is None:
-                primary = value
+            if label_norm == "primary" or ("date" in label_norm and not closures and label_norm not in _BACKUP_LABELS):
+                closures.append((value, []))
+            elif label_norm in _BACKUP_LABELS:
+                (closures[-1][1] if closures else orphan_backups).append(value)
 
-        if not primary and backup_dates:
-            primary = backup_dates.pop(0)
-        if not primary:
-            continue
+        if not closures and orphan_backups:
+            closures.append((orphan_backups.pop(0), orphan_backups))
+        elif closures and orphan_backups:
+            closures[0][1][:0] = orphan_backups
 
-        records.append(
-            {
-                "category": "beach",
-                "status": "Beach Closure" if "closure" in _norm(raw_status) else "Beach Access Status",
-                "description": raw_status.rstrip(".") or "Boca Chica Beach access",
-                "date": primary,
-                "backup_date": " | ".join(backup_dates) if backup_dates else None,
-                "source_url": source_url,
-            }
-        )
+        for primary, backup_dates in closures:
+            records.append(
+                {
+                    "category": "beach",
+                    "status": "Beach Closure" if "closure" in _norm(raw_status) else "Beach Access Status",
+                    "description": raw_status.rstrip(".") or "Boca Chica Beach access",
+                    "date": primary,
+                    "backup_date": " | ".join(backup_dates) if backup_dates else None,
+                    "source_url": source_url,
+                }
+            )
 
     df = pd.DataFrame.from_records(records)
     if not df.empty:
@@ -365,6 +369,11 @@ def _is_stale(doc: Dict[str, Any], now: datetime) -> bool:
     return bool(last_seen and now - last_seen > STALE_AFTER)
 
 
+def _has_ended(doc: Dict[str, Any], now: datetime) -> bool:
+    windows = record_windows(doc, now)
+    return bool(windows) and max(end for _, end in windows) <= now
+
+
 def plan_changes(
     current: List[Dict[str, Any]],
     stored: Dict[str, Dict[str, Any]],
@@ -398,6 +407,7 @@ def plan_changes(
                 if id(d) not in replaced
                 and _norm(d.get("category") or "road") == _norm(record["category"])
                 and _norm(d.get("description")) == _norm(record["description"])
+                and not _has_ended(d, now)
             ),
             None,
         )

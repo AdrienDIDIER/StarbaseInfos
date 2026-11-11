@@ -137,6 +137,32 @@ class ExtractionTests(unittest.TestCase):
         self.assertEqual(records_with_keys(extract_access_updates(html)), [])
 
 
+    def test_several_closures_in_one_block(self):
+        # La ville liste deux fermetures dans le même bloc : "Primary: Nov. 13 ..." puis "Primary: Nov. 14 ..."
+        records = records_with_keys(extract_access_updates(_fixture("access_two_beach_closures_2026-11-11.html")))
+        self.assertEqual(
+            [r["date"] for r in records],
+            ["Nov. 13 11:00 AM to Nov. 13 11:30 PM", "Nov. 14 11:00 AM to Nov. 14 11:30 PM"],
+        )
+        self.assertTrue(all(r["category"] == "beach" and not r["backup_date"] for r in records))
+
+    def test_backup_stays_with_its_own_primary(self):
+        html = (
+            '<div id="beach-closure"><div class="w-dyn-item"><div class="cms-big-text">Boca Chica Beach closures.</div>'
+            '<div class="cms-small-text-api">Primary: Nov. 13 11:00 AM to Nov. 13 11:30 PM<br>'
+            'Backup: Nov. 14 11:00 AM to Nov. 14 11:30 PM<br>Primary: Nov. 20 8:00 AM to Nov. 20 8:00 PM</div>'
+            '</div></div><div id="road-closure"></div>'
+        )
+        records = records_with_keys(extract_access_updates(html))
+        self.assertEqual(
+            [(r["date"], r["backup_date"]) for r in records],
+            [
+                ("Nov. 13 11:00 AM to Nov. 13 11:30 PM", "Nov. 14 11:00 AM to Nov. 14 11:30 PM"),
+                ("Nov. 20 8:00 AM to Nov. 20 8:00 PM", None),
+            ],
+        )
+
+
 class PlanChangesTests(unittest.TestCase):
     def test_new(self):
         self.assertEqual(_types(plan_changes([_beach()], {}, NOW)), ["new"])
@@ -164,6 +190,15 @@ class PlanChangesTests(unittest.TestCase):
         road = {"category": "road", "status": "Road Delay", "description": "Masseys to Production",
                 "date": "October 25 10:00 PM to October 26 4:30 AM", "backup_date": None, "uniq_key": "road-key"}
         self.assertEqual(_types(plan_changes([road], _stored(old), NOW)), ["new", "missing"])
+
+    def test_second_closure_listed_next_to_the_first_is_new(self):
+        first, second = _beach(), _beach(date="Oct. 26 6:00 AM to Oct. 26 6:00 PM")
+        self.assertEqual(_types(plan_changes([first, second], _stored(first), NOW)), ["seen", "new"])
+
+    def test_ended_closure_is_not_rescheduled(self):
+        old = _beach(date="Oct. 23 6:00 AM to Oct. 23 6:00 PM")
+        new = _beach(date="Oct. 30 6:00 AM to Oct. 30 6:00 PM")
+        self.assertEqual(_types(plan_changes([new], _stored(old), NOW)), ["new", "missing"])
 
     def test_missing_needs_three_runs(self):
         record = _beach()
